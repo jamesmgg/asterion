@@ -37,7 +37,7 @@ To remove only this route: `tailscale serve --tcp 8787 off`. Do not reset all Se
 
 - Visit the Sun, all eight planets, and eight major moons. On a phone, swipe the destination dock to reach the outer worlds; Explore lists each planet’s moons.
 - Drag to orbit; scroll or pinch to zoom. The + / − buttons and camera reset provide alternatives.
-- Solar system view offers readable spacing or true orbital distances, plus oblique, top-down, edge-on and inner-system cameras. Planet sizes are enlarged in both map modes. Moon-system views preserve actual relative radii and distances.
+- Solar system view offers readable spacing or true sizes & orbits, plus oblique, top-down, edge-on, inner-system, and asteroid-belt cameras. True scale uses one AU-based conversion for both orbital distances and every body radius, including the Sun. Planet disks can be subpixel: use labels or destinations for close-ups. Readable mode enlarges body sizes. Moon-system views preserve actual relative radii and distances.
 - The main asteroid belt is visible between Mars and Jupiter. Toggle **Asteroid belt** in Solar system settings, or choose **Asteroid belt** in the camera menu for a closer view. Pause and time-flow controls also govern the belt.
 - Set the simulation date and time speed, pause, or return to now. Space toggles pause; brackets change worlds.
 - Close-ups stream local tiles up to **16K for Earth and the Moon**, **8K for Mercury, Mars and Venus’s revealed surface**, and the actual source limits elsewhere. The altitude/detail readout shows refinement and source limits.
@@ -100,10 +100,14 @@ docker compose --profile test build tests
 docker compose --profile test run --rm tests
 ```
 
-The 24 numerical/asset tests cover belt placement, Kepler periods and pause behavior, debris energy conservation, mass budgets, escape versus reimpact classification, eclipse overlap, complete tile pyramids, bundled moon ephemerides, orbital residuals, a year of energy/momentum conservation, mass/energy scaling, gravitational acceleration in vacuum, airbursts, crater formation, gas-giant behavior, invalid inputs, and actual image-file signatures. Nine browser tests cover every planet and the new moon/eclipses/detail views, impact scrubbing and return to orbital time, scale modes, launches, replay, rendering errors, mobile layout, cancellation, touch targeting, pinch zoom, export, persistence, and science documentation. Screenshots are saved under `test-results/`.
+The 31 numerical/asset/rendering tests cover true body/orbit proportions, terrain coverage during delayed loading and zoom, shared LOD geometry, cloud-depth separation, safe near clipping, belt placement, Kepler periods and pause behavior, debris energy conservation, mass budgets, escape versus reimpact classification, eclipse overlap, complete tile pyramids, bundled moon ephemerides, orbital residuals, a year of energy/momentum conservation, mass/energy scaling, gravitational acceleration in vacuum, airbursts, crater formation, gas-giant behavior, invalid inputs, and actual image-file signatures. Eleven browser tests cover delayed Earth imagery, repeated zoom reversals, minimum-altitude rendering, true-scale label selection, every planet and the new moon/eclipses/detail views, impact scrubbing and return to orbital time, scale modes, launches, replay, rendering errors, mobile layout, cancellation, touch targeting, pinch zoom, export, persistence, and science documentation. Screenshots are saved under `test-results/`.
 
 Local development (Node 24+): `npm ci`, `npm test`, `npm run dev`. Local Vite binds 127.0.0.1. Docker is the canonical running application.
 
 ## Assets
 
 NASA, NOAA and Solar System Scope / INOVE provide the imagery and measured terrain. Solar System Scope material is used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). All processing, source resolution limits, licenses and regeneration commands are recorded in [ASSETS.md](ASSETS.md). Fonts are locally bundled from Fontsource under SIL Open Font License. The renderer adds documented lighting and cinematic effects.
+
+### Rendering continuity
+
+Streamed imagery blends from its resident parent over 450 ms on a common terrain lattice. Loaded detail stays resident through zoom reversals; only branches entirely behind the limb fold back to free cache space. The base globe remains the sole surface until both root tiles are ready, and a complete parent covers pending or failed children. Terrain has no artificial depth offset into the cloud deck. Atmosphere ray marching uses the final camera pose each frame. Ocean reflection uses a broad GGX rough-water approximation with dielectric Fresnel reflectance; it is not a dated wind or sea-state model.

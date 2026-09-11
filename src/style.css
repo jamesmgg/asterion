@@ -1142,6 +1142,28 @@ details p {
   color: #728ba5;
   margin-top: 13px;
 }
+@media (min-width: 760px) and (max-height: 950px) {
+  [data-view="system"] .observation {
+    top: 20px;
+  }
+  [data-view="system"] .observation h1 {
+    font-size: 32px;
+    letter-spacing: -1px;
+    margin-top: 0;
+  }
+  [data-view="system"] .planet-class,
+  [data-view="system"] .subtitle,
+  [data-view="system"] .description {
+    display: none;
+  }
+  #system-settings {
+    top: 85px;
+    bottom: 80px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    padding-right: 6px;
+  }
+}
 [data-view="system"] .observation {
   width: 300px;
 }

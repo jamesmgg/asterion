@@ -13,3 +13,10 @@ export function detailLevel(projectedCircumference: number, maxLevel: number) {
     ),
   );
 }
+/** Keep the near plane above the ground even at the minimum close-up altitude. */
+export function closeUpNearPlane(distance: number, maximumRelief: number) {
+  return Math.min(
+    0.005,
+    Math.max(0.00001, (distance - 1 - maximumRelief) * 0.1),
+  );
+}

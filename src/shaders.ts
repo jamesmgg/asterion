@@ -31,6 +31,7 @@ export const surfaceFragment = `
 uniform sampler2D dayMap;uniform sampler2D nightMap;uniform sampler2D cloudMap;uniform sampler2D specularMap;
 uniform vec3 sunDir;uniform float earth;uniform float star;uniform float cloudAmount;
 uniform vec4 tileRect;uniform float tiled;uniform float time;uniform float giant;
+uniform sampler2D parentMap;uniform vec4 parentRect;uniform float parentTiled;uniform float detailBlend;
 uniform float reliefEnabled;uniform vec2 heightTexel;uniform mat3 objectNormalMatrix;
 uniform float cloudOffset;uniform float albedoScale;uniform float craterPatch;
 varying vec2 vUv;varying vec3 vNormal;varying vec3 vWorld;varying vec3 vObject;
@@ -52,8 +53,14 @@ void main(){
  vec2 sampleUv=uv;
  // Very small differential zonal drift; it illustrates weather, not a forecast.
  if(giant>.5)sampleUv.x+=sin(uv.y*75.)*sin(time*.012)*.0008;
+ vec2 globeUv=sampleUv;
  if(tiled>.5)sampleUv=((sampleUv-tileRect.xy)/tileRect.zw*512.+1.)/514.;
- vec3 albedo=pow(texture2D(dayMap,sampleUv).rgb,vec3(2.2))*albedoScale;
+ vec3 albedo=pow(texture2D(dayMap,sampleUv).rgb,vec3(2.2));
+ if(tiled>.5&&detailBlend<1.){
+  vec2 parentUv=globeUv;if(parentTiled>.5)parentUv=((globeUv-parentRect.xy)/parentRect.zw*512.+1.)/514.;
+  albedo=mix(pow(texture2D(parentMap,parentUv).rgb,vec3(2.2)),albedo,detailBlend);
+ }
+ albedo*=albedoScale;
  if(earth>.5){float water=texture2D(specularMap,uv).r;albedo=mix(albedo,max(albedo,vec3(.004,.015,.037)),water);}
  float ndl=dot(n,s),vis=sunlight(vWorld,s);
  float cloudShadow=1.;
@@ -65,8 +72,16 @@ void main(){
  if(earth>.5){
   vec3 night=pow(texture2D(nightMap,uv).rgb,vec3(2.2));color+=night*(1.-smoothstep(-.2,.05,ndl))*1.3;
   float ocean=texture2D(specularMap,uv).r;vec3 halfD=normalize(s+viewDir);
-  float fresnel=.025+.975*pow(1.-max(dot(n,viewDir),0.),5.);
-  color+=vec3(1.,.94,.8)*pow(max(dot(n,halfD),0.),160.)*ocean*max(ndl,0.)*vis*cloudShadow*(.15+fresnel)*2.;
+  // Rough dielectric water (GGX + Smith masking + Schlick Fresnel). The broad
+  // distribution and ~2% normal reflectance avoid a painted-on white lamp spot.
+  float nl=max(ndl,0.),nv=max(dot(n,viewDir),.001),nh=max(dot(n,halfD),0.);
+  float a2=pow(.55,4.);float denom=nh*nh*(a2-1.)+1.;
+  float distribution=a2/(3.14159265*denom*denom);
+  float masking=2.*nl/(nl+sqrt(a2+(1.-a2)*nl*nl)+.00001);
+  masking*=2.*nv/(nv+sqrt(a2+(1.-a2)*nv*nv));
+  float fresnel=.0204+.9796*pow(1.-max(dot(halfD,viewDir),0.),5.);
+  float reflection=distribution*masking*fresnel/(4.*max(nl*nv,.0001));
+  color+=vec3(1.,.97,.92)*reflection*ocean*nl*vis*cloudShadow*1.75;
  }
  for(int i=0;i<8;i++){if(i>=craterCount)break;float r=2.*asin(min(1.,.5*length(normalize(vObject)-craters[i].xyz)))/max(craters[i].w,.000001);
   color*=1.-.6*(1.-smoothstep(.65,1.45,r));}

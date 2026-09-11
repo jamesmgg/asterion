@@ -17,12 +17,13 @@ import {
   atmosphereFragment,
 } from "./shaders.ts";
 import { TerrainStream } from "./terrain.ts";
+import { closeUpNearPlane } from "./detail.ts";
 import type { Dataset } from "./terrain.ts";
 import { ImpactSequence } from "./impact-scene.ts";
 import { AsteroidBelt } from "./belt.ts";
 import type { Playback } from "./impact-scene.ts";
 import type { Planet } from "./data.ts";
-import { planetPosition } from "./physics.ts";
+import { AU, planetPosition } from "./physics.ts";
 import type { SolarSystem, ImpactInput, ImpactResult } from "./physics.ts";
 
 type World = {
@@ -241,6 +242,10 @@ export class Observatory {
       craterCount: { value: 0 },
       tiled: { value: 0 },
       tileRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+      parentMap: { value: this.texture(p.id + ".jpg") },
+      parentRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+      parentTiled: { value: 0 },
+      detailBlend: { value: 1 },
       cloudAmount: { value: 1 },
       cloudOffset: { value: 0 },
       time: { value: 0 },
@@ -423,6 +428,13 @@ export class Observatory {
     const idx = PLANETS.findIndex((p) => p.id === id),
       a = ELEMENTS[id][0][0];
     return v.multiplyScalar((3.7 + idx * 2.8) / a);
+  }
+  mapRadius(p: Planet) {
+    // Positions are in AU: radii must use exactly the same conversion.
+    if (this.trueScale) return (p.radius / AU) * 1.15;
+    return p.id === "sun"
+      ? 0.95
+      : 0.12 + Math.pow(p.radius / 6371000, 0.52) * 0.14;
   }
   makeOrbits() {
     for (const child of [...this.orbitGroup.children]) {
@@ -1018,11 +1030,7 @@ export class Observatory {
             p.id,
           ),
         );
-        const scale =
-          p.id === "sun"
-            ? 0.95
-            : 0.12 + Math.pow(p.radius / 6371000, 0.52) * 0.14;
-        w.root.scale.setScalar(scale);
+        w.root.scale.setScalar(this.mapRadius(p));
         (u.sunDir.value as THREE.Vector3).copy(w.root.position).negate();
       } else {
         (u.sunDir.value as THREE.Vector3).copy(sunlight);
@@ -1076,13 +1084,6 @@ export class Observatory {
       u.objectNormalMatrix.value.setFromMatrix4(w.mesh.matrixWorld);
       u.bodyCenter.value.copy(w.root.position);
       u.bodyRadius.value = w.root.scale.x;
-      if (w.atmosphere) {
-        const a = w.atmosphere.material as THREE.ShaderMaterial;
-        a.uniforms.cameraLocal.value
-          .copy(this.camera.position)
-          .sub(w.root.position)
-          .divideScalar(w.root.scale.x);
-      }
       w.label.hidden =
         this.view === "planet" || !this.showLabels || !w.root.visible;
       if (!w.label.hidden) {
@@ -1129,19 +1130,20 @@ export class Observatory {
           ? "Moon positions: JPL Horizons vectors (2026–2027)"
           : "Moon positions: approximate reference orbits";
     }
-    if (this.view === "planet" && now - this.detailTick > 150) {
-      this.detailTick = now;
+    if (this.view === "planet") {
       const w = this.worlds.get(this.selected)!;
       this.localCamera.copy(this.camera.position);
       w.mesh.worldToLocal(this.localCamera);
       const pixels =
-        (this.container.clientHeight * this.renderer.getPixelRatio()) /
+        (this.container.clientHeight *
+          Math.min(devicePixelRatio, this.mobile ? 1.8 : 2)) /
         (2 * Math.tan((this.camera.fov * Math.PI) / 360));
       if (w.stream) {
         const ready = w.stream.update(
           this.localCamera,
           pixels,
           this.highQuality,
+          now,
         );
         w.material.colorWrite = !ready;
         w.material.depthWrite = !ready;
@@ -1154,11 +1156,14 @@ export class Observatory {
       );
       const dataset = this.datasets[this.selected],
         detail = w.stream
-          ? `${Math.round((1024 * 2 ** w.stream.activeLevel) / 1024)}K detail${w.stream.pending ? " · refining" : ""}`
+          ? `${2 ** Math.max(1, w.stream.activeLevel)}K detail${w.stream.pending ? " · refining" : ""}`
           : "Base map";
-      this.onDetail(
-        `${altitude.toLocaleString(undefined, { maximumFractionDigits: 0 })} km altitude · ${detail}${dataset && dataset.maxLevel === w.stream?.activeLevel ? " · source limit" : ""}`,
-      );
+      if (now - this.detailTick > 150) {
+        this.detailTick = now;
+        this.onDetail(
+          `${altitude.toLocaleString(undefined, { maximumFractionDigits: 0 })} km altitude · ${detail}${dataset && dataset.maxLevel === w.stream?.activeLevel ? " · source limit" : ""}`,
+        );
+      }
     }
     this.entry?.update(dt);
     if (this.followAsteroid && this.entry && this.entry.time >= 3.5)
@@ -1190,6 +1195,27 @@ export class Observatory {
       this.beltLabel.hidden =
         anchor.z > 1 || Math.abs(anchor.x) > 1 || Math.abs(anchor.y) > 1;
       this.beltLabel.style.transform = `translate(${(anchor.x * 0.5 + 0.5) * this.container.clientWidth}px,${(-anchor.y * 0.5 + 0.5) * this.container.clientHeight + 20}px) translate(-50%,0)`;
+    }
+    // Ray marching must use the camera that renders this frame, after damping,
+    // zoom, and encounter tracking. A one-frame lag tears the atmospheric limb.
+    for (const w of this.worlds.values()) {
+      if (!w.root.visible || !w.atmosphere) continue;
+      const a = w.atmosphere.material as THREE.ShaderMaterial;
+      a.uniforms.cameraLocal.value
+        .copy(this.camera.position)
+        .sub(w.root.position)
+        .divideScalar(w.root.scale.x);
+    }
+    if (this.view === "planet" && !this.entry) {
+      const p = BODIES.find((p) => p.id === this.selected)!;
+      const relief = this.terrainEnabled
+        ? (this.datasets[this.selected + "-height"]?.max ?? 0) / p.radius
+        : 0;
+      const near = closeUpNearPlane(this.camera.position.length(), relief);
+      if (Math.abs(near - this.camera.near) > 0.000001) {
+        this.camera.near = near;
+        this.camera.updateProjectionMatrix();
+      }
     }
     this.renderer.render(this.scene, this.camera);
     if (this.assetsReady && this.readyCallback && !this.desiredCamera) {
