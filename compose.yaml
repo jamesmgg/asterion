@@ -1,0 +1,25 @@
+name: asterion
+services:
+  web:
+    build: .
+    image: asterion:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:80"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+  tests:
+    profiles: [test]
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: asterion-tests:local
+    environment:
+      BASE_URL: http://web
+    volumes:
+      - ./test-results:/app/test-results
+    shm_size: 1gb
+    depends_on:
+      web:
+        condition: service_healthy

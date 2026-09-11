@@ -1,0 +1,6 @@
+{
+  "name": "asterion", "version": "1.0.0", "private": true, "type": "module",
+  "scripts": { "dev": "vite --host 127.0.0.1", "build": "tsc --noEmit && vite build", "test": "node --test tests/*.test.mjs", "test:e2e": "playwright test" },
+  "dependencies": { "three": "0.180.0", "@fontsource/dm-sans": "5.2.6", "@fontsource/outfit": "5.2.6" },
+  "devDependencies": { "@types/three": "0.180.0", "typescript": "5.9.2", "vite": "7.1.5", "@playwright/test": "1.55.0" }
+}
