@@ -40,7 +40,6 @@ test("Earth stays continuous across slow detail loading, zoom reversals, and min
   });
   await page.waitForTimeout(3500);
   const before = await canvasPixels(page);
-  const loaded = requests.length;
   for (let i = 0; i < 3; i++) {
     await page.getByRole("button", { name: "Zoom out", exact: true }).click();
     await page.waitForTimeout(250);
@@ -63,8 +62,10 @@ test("Earth stays continuous across slow detail loading, zoom reversals, and min
     changed / (96 * 96),
     "settled zoom round-trip must preserve the rendered surface",
   ).toBeLessThan(0.025);
-  expect(requests.length, "resident detail must survive zoom reversals").toBe(
-    loaded,
+  // A wider horizon can reveal new tiles. Retention means loaded URLs are
+  // never fetched again, not that every neighboring tile was already visible.
+  expect(requests.length, "zoom reversals must not reload resident tiles").toBe(
+    new Set(requests).size,
   );
   await page.screenshot({ path: "test-results/earth-continuous-detail.png" });
   await page

@@ -1,6 +1,6 @@
 # Asterion
 
-A locally hosted 3D orbital observatory and asteroid-impact laboratory. Built with TypeScript, Three.js, custom planet/atmosphere shaders, and a separate numerical physics module. No API keys, telemetry, account, or external runtime assets.
+A 3D orbital observatory and asteroid-impact laboratory, available on Cloudflare or through local Docker hosting. Built with TypeScript, Three.js, custom planet/atmosphere shaders, and a separate numerical physics module. No visitor API keys, telemetry, account, or external runtime assets.
 
 ![Asterion orbital observatory](docs/observatory.png)
 
@@ -19,6 +19,24 @@ docker compose ps
 docker compose logs --tail 30 web
 docker compose stop web
 ```
+
+## Cloudflare deployment
+
+Public site: **https://asterion.jaimemguajardo.workers.dev**.
+
+The complete app can also run publicly on Cloudflare Workers Static Assets. `wrangler.jsonc` publishes `dist/` as the `asterion` site, including all textures, terrain tiles, and moon ephemerides. Physics and rendering continue to run in the visitor's browser; no server-side Worker code or database is required.
+
+For subsequent deployments with Node 24+:
+
+```powershell
+npm ci
+npx --yes wrangler@4.118.0 login
+npm run deploy:cloudflare
+```
+
+The deployment command builds fresh assets before uploading and prints the public HTTPS URL. The initial deployment used the production assets built and tested inside Docker. `public/_headers` retains the response security headers and caches hashed bundles immutably; unversioned imagery and data use Cloudflare's normal revalidation. Cloudflare credentials and local Wrangler state are excluded from the repository.
+
+The cloud site runs independently of the local Docker service. Encounter history belongs to each browser origin, so the public site starts its own local history. Publishing new commits to GitHub does not automatically redeploy; run the deployment command to release an update.
 
 ## Private Tailscale access
 
