@@ -21,6 +21,8 @@ import { closeUpNearPlane } from "./detail.ts";
 import type { Dataset } from "./terrain.ts";
 import { ImpactSequence } from "./impact-scene.ts";
 import { AsteroidBelt } from "./belt.ts";
+import { CosmicScene } from "./cosmic-scene.ts";
+import type { CosmicDestination } from "./cosmic-data.ts";
 import type { Playback } from "./impact-scene.ts";
 import type { Planet } from "./data.ts";
 import { AU, planetPosition } from "./physics.ts";
@@ -65,7 +67,14 @@ export class Observatory {
   camera = new THREE.PerspectiveCamera(38, 1, 0.005, 5000);
   controls: OrbitControls;
   worlds = new Map<string, World>();
-  view: "planet" | "system" | "moons" = "planet";
+  view: "planet" | "system" | "moons" | "cosmic" = "planet";
+  cosmic?: CosmicScene;
+  cosmicDays = 0;
+  private cosmicSeconds = 0;
+  private cosmicFocus?: string;
+  private cosmicLabels = new Map<string, HTMLElement>();
+  private solarPixelRatio?: number;
+  onCosmicSelect: (id: string) => void = () => {};
   selected = "earth";
   trueScale = false;
   showOrbits = true;
@@ -501,8 +510,159 @@ export class Observatory {
       Math.abs(previousAspect - this.camera.aspect) > 0.001
     )
       this.setSystemCamera("belt");
+    if (
+      this.view === "cosmic" &&
+      Math.abs(previousAspect - this.camera.aspect) > 0.001
+    )
+      this.resetCosmicCamera();
+  }
+  openCosmic(destination: CosmicDestination) {
+    this.closeCosmic();
+    this.clearEvent();
+    this.disposeDetail();
+    this.aiming = false;
+    this.targetLocal = null;
+    this.targetMarker.removeFromParent();
+    this.eclipseDemo = false;
+    this.worldGroup.visible = false;
+    this.orbitGroup.visible = false;
+    this.belt.visible = false;
+    this.beltLabel.hidden = true;
+    this.moonGuides.visible = false;
+    for (const world of this.worlds.values()) world.label.hidden = true;
+    this.cosmic = new CosmicScene(destination, this.mobile);
+    this.scene.add(this.cosmic.group);
+    this.view = "cosmic";
+    this.cosmicDays = this.cosmicSeconds = 0;
+    this.cosmicFocus = undefined;
+    this.solarPixelRatio = this.renderer.getPixelRatio();
+    if (destination.kind === "black-hole")
+      this.renderer.setPixelRatio(
+        Math.min(this.solarPixelRatio, this.mobile ? 1 : 1.25),
+      );
+    this.renderer.domElement.setAttribute(
+      "aria-label",
+      `Interactive 3D view of ${destination.name}. Drag to orbit, pinch or scroll to zoom.`,
+    );
+    this.focusCosmicBody();
+  }
+  private closeCosmic() {
+    if (!this.cosmic) return;
+    this.cosmic.group.removeFromParent();
+    this.cosmic.dispose();
+    this.cosmic = undefined;
+    for (const label of this.cosmicLabels.values()) label.remove();
+    this.cosmicLabels.clear();
+    this.worldGroup.visible = true;
+    if (this.solarPixelRatio !== undefined)
+      this.renderer.setPixelRatio(this.solarPixelRatio);
+    this.solarPixelRatio = undefined;
+    this.renderer.domElement.setAttribute(
+      "aria-label",
+      "Interactive 3D solar system. Drag to orbit, pinch or scroll to zoom.",
+    );
+  }
+  advanceCosmic(dt: number, speed: number) {
+    this.cosmicDays += dt * speed;
+    this.cosmicSeconds += dt;
+  }
+  focusCosmicBody(id?: string) {
+    const cosmic = this.cosmic;
+    if (!cosmic) return;
+    this.cosmicFocus = cosmic.destination.bodies.some((body) => body.id === id)
+      ? id
+      : undefined;
+    cosmic.setFocus(this.cosmicFocus);
+    cosmic.update(this.cosmicDays, this.cosmicSeconds);
+    const target = cosmic
+      .getTargets()
+      .find((body) => body.id === this.cosmicFocus);
+    const origin = target?.position ?? new THREE.Vector3();
+    cosmic.group.position.copy(origin).negate();
+    const pose = cosmic.cameraFor(this.cosmicFocus);
+    const fit = Math.max(1, 1 / this.camera.aspect);
+    this.controls.target.copy(pose.target).sub(origin);
+    this.camera.position
+      .copy(pose.position)
+      .sub(pose.target)
+      .multiplyScalar(fit)
+      .add(this.controls.target);
+    this.controls.minDistance = pose.minDistance;
+    this.controls.maxDistance = pose.maxDistance * fit;
+    this.desiredCamera = null;
+    // Close-ups use a floating origin so tiny, true-scale worlds retain precision.
+    this.camera.near = Math.max(
+      1e-9,
+      Math.min(0.005, (target?.radius ?? 1) * 0.01),
+    );
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+  }
+  resetCosmicCamera() {
+    this.focusCosmicBody(this.cosmicFocus);
+  }
+  setCosmicScale(real: boolean) {
+    this.cosmic?.setScale(real);
+    this.resetCosmicCamera();
+  }
+  setCosmicComparison(show: boolean) {
+    this.cosmic?.setComparison(show);
+    this.focusCosmicBody();
+  }
+  private updateCosmic(now: number) {
+    const cosmic = this.cosmic!;
+    cosmic.update(this.cosmicDays, this.cosmicSeconds);
+    const targets = cosmic.getTargets();
+    const focus = targets.find((body) => body.id === this.cosmicFocus);
+    cosmic.group.position.copy(focus?.position ?? new THREE.Vector3()).negate();
+    cosmic.group.updateWorldMatrix(true, true);
+    this.controls.update();
+    this.camera.updateMatrixWorld();
+    const rect = this.container.getBoundingClientRect();
+    for (const target of targets) {
+      let label = this.cosmicLabels.get(target.id);
+      if (!label) {
+        const selectable = cosmic.destination.bodies.some(
+          (body) => body.id === target.id,
+        );
+        label = document.createElement(selectable ? "button" : "span");
+        label.className = "world-label cosmic-label";
+        label.textContent = target.name;
+        label.dataset.cosmicTarget = target.id;
+        if (selectable) {
+          label.setAttribute("aria-label", `Focus ${target.name}`);
+          label.onclick = () => this.onCosmicSelect(target.id);
+        }
+        this.labelContainer.append(label);
+        this.cosmicLabels.set(target.id, label);
+      }
+      const anchor = target.position.clone().add(cosmic.group.position);
+      // Put comparison labels outside the stellar disks; single-object views
+      // already identify their subject in the heading and need no center tag.
+      if (cosmic.destination.kind === "star") {
+        const screenUp = new THREE.Vector3().setFromMatrixColumn(
+          this.camera.matrixWorld,
+          1,
+        );
+        anchor.addScaledVector(screenUp, -target.radius * 1.15);
+      }
+      const projected = anchor.project(this.camera);
+      label.hidden =
+        !!focus ||
+        (cosmic.destination.kind !== "system" && targets.length === 1) ||
+        projected.z > 1 ||
+        projected.z < -1 ||
+        Math.abs(projected.x) > 1 ||
+        Math.abs(projected.y) > 1;
+      label.style.transform = `translate(${(projected.x * 0.5 + 0.5) * rect.width}px,${(-projected.y * 0.5 + 0.5) * rect.height + 14}px)`;
+    }
+    for (const [id, label] of this.cosmicLabels)
+      if (!targets.some((body) => body.id === id)) label.hidden = true;
+    this.renderer.render(this.scene, this.camera);
+    this.finishFrame(now);
   }
   focus(id: string, instant = false) {
+    this.closeCosmic();
     this.clearEvent();
     this.eclipseDemo = false;
     this.moonGuides.visible = false;
@@ -557,6 +717,7 @@ export class Observatory {
     this.prepareDetail();
   }
   system() {
+    this.closeCosmic();
     this.clearEvent();
     this.eclipseDemo = false;
     this.moonGuides.visible = false;
@@ -641,6 +802,12 @@ export class Observatory {
     );
     const ray = new THREE.Raycaster();
     ray.setFromCamera(pointer, this.camera);
+    if (this.view === "cosmic") {
+      const id = this.cosmic?.pick(ray);
+      if (id && this.cosmic?.destination.bodies.some((body) => body.id === id))
+        this.onCosmicSelect(id);
+      return;
+    }
     if (this.view !== "planet") {
       const hit = ray.intersectObjects(
         [...this.worlds.values()]
@@ -992,6 +1159,10 @@ export class Observatory {
             : new THREE.Vector3(2, 35, 43);
   }
   update(sim: SolarSystem, dt: number, now: number) {
+    if (this.view === "cosmic" && this.cosmic) {
+      this.updateCosmic(now);
+      return;
+    }
     this.lastSimulation = sim;
     this.selectedJD = sim.jd;
     const sun = sim.bodies[0].position;
@@ -1218,6 +1389,9 @@ export class Observatory {
       }
     }
     this.renderer.render(this.scene, this.camera);
+    this.finishFrame(now);
+  }
+  private finishFrame(now: number) {
     if (this.assetsReady && this.readyCallback && !this.desiredCamera) {
       this.readyCallback();
       this.readyCallback = undefined;
@@ -1228,7 +1402,16 @@ export class Observatory {
       this.onFrame(fps);
       if (this.highQuality) {
         const ratio = this.renderer.getPixelRatio(),
-          ceiling = Math.min(devicePixelRatio, this.mobile ? 1.8 : 2);
+          ceiling = Math.min(
+            devicePixelRatio,
+            this.cosmic?.destination.kind === "black-hole"
+              ? this.mobile
+                ? 1
+                : 1.25
+              : this.mobile
+                ? 1.8
+                : 2,
+          );
         if (fps < 28 && ratio > 0.8) {
           this.renderer.setPixelRatio(Math.max(0.8, ratio - 0.2));
           this.resize();
@@ -1243,7 +1426,7 @@ export class Observatory {
   }
   screenshot() {
     const a = document.createElement("a");
-    a.download = `asterion-${this.selected}.png`;
+    a.download = `asterion-${this.cosmic ? (this.cosmicFocus ?? this.cosmic.destination.id) : this.selected}.png`;
     a.href = this.renderer.domElement.toDataURL("image/png");
     a.click();
   }

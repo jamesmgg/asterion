@@ -50,6 +50,18 @@ To remove only this route: `tailscale serve --tcp 8787 off`. Do not reset all Se
 - The last 20 encounters persist in local storage in the current browser/origin. Export them as JSON. Scars last for the current page session (the latest eight per world).
 - Image capture downloads the 3D view. Sound is optional and represents an interface cue.
 
+### Explore beyond
+
+Choose **Explore beyond** in the header to open a separate, searchable destination library. Filter by **Stars**, **Planetary systems**, or **Black holes**; the familiar Solar System controls stay together in their existing view. The same library is available on a phone.
+
+![Explore beyond destination library](docs/cosmic-library.png)
+
+- Visit **Sirius A**, **Vega**, and **Betelgeuse**, and compare their sizes with our Sun.
+- Explore all seven **TRAPPIST-1** planets, eight **Kepler-90** planets, and **Proxima b**. Select a world in the bottom dock or tap its label for a close-up; **Overview** returns to its system. Switch between readable spacing and **True sizes & orbits**.
+- Orbit **Sagittarius A\*** and **M87\*** to inspect illustrative accretion disks and gravitational lensing.
+
+Drag, pinch, zoom, pause, and save images as before. **About this destination → Sources & model** explains the measurements and visual assumptions. **Solar system** returns home and restores your previous Solar System time settings; exploration uses its own elapsed time. Asteroid experiments remain in the Solar System's Impact lab.
+
 ## Physics and accuracy
 
 This is a scientific exploration app with an explicitly simplified impact model. It is **not** a high-precision ephemeris, validated hazard predictor, or shock-hydrodynamics solver.
@@ -59,6 +71,12 @@ This is a scientific exploration app with an explicitly simplified impact model.
 Nine mutually interacting Newtonian point masses (Sun + eight planets), in AU, days, and solar masses. Velocity-Verlet steps never exceed 0.125 day. Initial positions and centered-difference velocities are derived from JPL SSD's approximate Keplerian elements and century rates. Initial dates are restricted to 1800–2050. Earth represents the Earth–Moon barycenter approximately, without a separate Moon mass. No relativity, tides, or small-body perturbations. Moon trajectories are displayed separately and do not add masses to this nine-body integrator. UTC approximates ephemeris time. This is suitable for exploration, not spacecraft navigation.
 
 Close-ups normalize the planet radius, retain rotation periods and approximate obliquities, and illuminate surfaces from the sunward direction. Prime-meridian alignment, spin-axis directions, seasons, cloud motion, and planetary reference orbit guides are approximate or illustrative. Eight moon trajectories use planet-centered JPL Horizons states with cubic Hermite interpolation during 2026–2027; fixed approximate Keplerian orbits and illustrative phases are used outside that window. Moon orbit guides sample the same trajectory source. Eclipse shading computes solar and occluder angular disk overlap; the Io demonstration is deliberately aligned, not a historical event. The asteroid belt uses a reproducible population of inclined Keplerian orbits with semimajor axes from 2.2–3.2 AU. It follows simulation time and remains visible in both distance scales. Its enlarged markers show a population illustration, not observed positions of individually catalogued asteroids, and it does not perturb the planets. Impacts do not change a planet's mass, spin, orbit, or global structure.
+
+### Beyond the Solar System
+
+The eight destinations use a static catalogue of published measurements and explicit estimates. Exoplanet orbits solve Kepler's equation independently; their circular, coplanar arrangement and starting phases are illustrative. They are not dated ephemerides or interacting N-body integrations. Real scale uses proportional body radii and orbital distances, while readable mode enlarges worlds.
+
+Stellar surface patterns and every exoplanet surface are illustrations. Proxima b has an estimated radius and a measured minimum mass; no ocean or atmosphere is implied. Black holes use a nonrotating Schwarzschild reference radius with approximate light bending and illustrative gas emission, not a full general-relativity or accretion-flow solution. [Catalogue measurements, primary sources, and model limits](docs/cosmic-sources.md) document each destination.
 
 ### Impact entry
 
@@ -100,7 +118,7 @@ docker compose --profile test build tests
 docker compose --profile test run --rm tests
 ```
 
-The 31 numerical/asset/rendering tests cover true body/orbit proportions, terrain coverage during delayed loading and zoom, shared LOD geometry, cloud-depth separation, safe near clipping, belt placement, Kepler periods and pause behavior, debris energy conservation, mass budgets, escape versus reimpact classification, eclipse overlap, complete tile pyramids, bundled moon ephemerides, orbital residuals, a year of energy/momentum conservation, mass/energy scaling, gravitational acceleration in vacuum, airbursts, crater formation, gas-giant behavior, invalid inputs, and actual image-file signatures. Eleven browser tests cover delayed Earth imagery, repeated zoom reversals, minimum-altitude rendering, true-scale label selection, every planet and the new moon/eclipses/detail views, impact scrubbing and return to orbital time, scale modes, launches, replay, rendering errors, mobile layout, cancellation, touch targeting, pinch zoom, export, persistence, and science documentation. Screenshots are saved under `test-results/`.
+Numerical, asset, and rendering tests cover physical body/orbit proportions, catalogue consistency, Schwarzschild reference radii, focus and resource disposal, terrain streaming and zoom continuity, belt placement, Kepler periods, debris energy and mass budgets, eclipses, bundled imagery and ephemerides, nine-body conservation, and impact outcomes. Browser tests exercise the Solar System, impact playback, touch targeting and pinch zoom, every cosmic destination, library search and keyboard navigation, mobile layout, true-scale close-ups, Sun comparisons, image capture, and returning home with time settings preserved. Screenshots are saved under `test-results/`.
 
 Local development (Node 24+): `npm ci`, `npm test`, `npm run dev`. Local Vite binds 127.0.0.1. Docker is the canonical running application.
 

@@ -1,0 +1,1094 @@
+#cosmic-library {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  color: #c6eeff;
+  font-size: 11px;
+  white-space: nowrap;
+}
+#cosmic-library:hover {
+  background: #c6eeff0c;
+  border-color: #c6eeff44;
+}
+#cosmic-library svg {
+  width: 17px;
+  height: 17px;
+}
+#cosmic-library-modal {
+  width: min(1060px, calc(100vw - 64px));
+  max-width: none;
+  max-height: min(890px, calc(100dvh - 64px));
+  padding: 0;
+  border: 1px solid #7596bd38;
+  border-radius: 19px;
+  background: #08111f;
+  color: #e9f0f8;
+  box-shadow: 0 36px 150px #000a;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #344966 transparent;
+}
+#cosmic-library-modal::backdrop {
+  background: #010611bd;
+  backdrop-filter: blur(13px);
+}
+.cosmic-library-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 30px 32px 23px;
+}
+.cosmic-library-kicker {
+  font-size: 10px;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+.cosmic-library-head h2 {
+  font-size: clamp(25px, 2.5vw, 33px);
+  font-weight: 400;
+  letter-spacing: -0.7px;
+  line-height: 1.2;
+}
+.cosmic-library-head h2 + p {
+  color: #8fa3be;
+  font-size: 12px;
+  margin-top: 10px;
+}
+.cosmic-library-tools {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 0 32px 23px;
+}
+.cosmic-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.cosmic-categories button {
+  padding: 8px 12px;
+  min-height: 36px;
+  border-radius: 20px;
+  font-size: 11px;
+  color: #9dafc4;
+  white-space: nowrap;
+}
+.cosmic-categories button[aria-pressed="true"] {
+  color: #e0f3ff;
+  background: #213349;
+}
+.cosmic-categories button:hover {
+  color: #fff;
+  background: #21334980;
+}
+.cosmic-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #7894b43d;
+  padding: 5px 2px;
+  flex: 0 1 224px;
+  min-width: 130px;
+}
+.cosmic-search-wrap svg {
+  width: 16px;
+  height: 16px;
+  color: #819ab7;
+}
+#cosmic-search {
+  min-width: 0;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  color: #deecfa;
+  padding: 6px 0;
+  font-size: 11px;
+}
+#cosmic-search::placeholder {
+  color: #8297b1;
+  opacity: 1;
+}
+.cosmic-library-results {
+  padding: 0 32px;
+}
+.cosmic-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.cosmic-card {
+  text-align: left;
+  padding: 0;
+  overflow: hidden;
+  background: #0c1828;
+  border: 1px solid #9cb6da19;
+  border-radius: 10px;
+  color: #e9f0f8;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.cosmic-card:hover {
+  border-color: #c6eeff65;
+  background: #112238;
+}
+.cosmic-card-copy {
+  display: flex;
+  flex-direction: column;
+  padding: 15px;
+  min-height: 134px;
+}
+.cosmic-card-kind {
+  font-size: 9px;
+  color: #8aa2bf;
+}
+.cosmic-card strong {
+  font-family: "Outfit", sans-serif;
+  font-weight: 400;
+  font-size: 22px;
+  margin-top: 4px;
+  letter-spacing: -0.2px;
+}
+.cosmic-card-tagline {
+  color: #b6c7dc;
+  font-size: 10px;
+  line-height: 1.5;
+  margin-top: 7px;
+}
+.cosmic-card-distance {
+  color: #819ab5;
+  font-size: 9px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+.cosmic-library-foot {
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  padding: 20px 32px 24px;
+  font-size: 9px;
+  color: #839ab6;
+}
+.cosmic-empty {
+  min-height: 265px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 11px;
+}
+.cosmic-empty > span {
+  font-size: 40px;
+  color: #83a9c9;
+}
+.cosmic-empty h3 {
+  font-size: 23px;
+}
+.cosmic-empty p {
+  color: var(--muted);
+  font-size: 12px;
+}
+#cosmic-clear-filters {
+  padding: 9px 15px;
+  color: var(--ice);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+/* Small, deliberately illustrative destination portraits; no fetched artwork. */
+.cosmic-art {
+  display: block;
+  position: relative;
+  height: 128px;
+  overflow: hidden;
+  isolation: isolate;
+  background: #030916;
+}
+.cosmic-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, #0c182836, transparent 45%);
+  pointer-events: none;
+}
+.cosmic-art-stars {
+  position: absolute;
+  inset: 0;
+  opacity: 0.65;
+  background-image:
+    radial-gradient(circle at 16% 27%, #bdd7ff 0 0.6px, transparent 1px),
+    radial-gradient(circle at 76% 17%, #aec7ef 0 0.6px, transparent 1px),
+    radial-gradient(circle at 83% 61%, #e3d5b9 0 0.6px, transparent 1px),
+    radial-gradient(circle at 25% 77%, #9cb7dc 0 0.6px, transparent 1px),
+    radial-gradient(circle at 40% 12%, #7085ab 0 0.5px, transparent 1px),
+    radial-gradient(circle at 63% 88%, #728ab0 0 0.6px, transparent 1px),
+    radial-gradient(circle at 95% 30%, #89a3c9 0 0.6px, transparent 1px);
+}
+.cosmic-art-star {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  left: calc(50% - 29px);
+  top: calc(50% - 29px);
+  background: radial-gradient(
+    circle at 36% 30%,
+    #fff9e9,
+    var(--cosmic-accent) 55%,
+    color-mix(in srgb, var(--cosmic-accent), #783811 42%) 94%
+  );
+  box-shadow:
+    0 0 16px color-mix(in srgb, var(--cosmic-accent), transparent 60%),
+    0 0 45px color-mix(in srgb, var(--cosmic-accent), transparent 85%);
+}
+.cosmic-art-corona {
+  position: absolute;
+  inset: -30px;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--cosmic-accent), transparent 86%),
+    transparent 56%
+  );
+}
+.cosmic-art--sirius-a .cosmic-art-star {
+  width: 48px;
+  height: 48px;
+  left: calc(50% - 24px);
+  top: calc(50% - 24px);
+}
+.cosmic-art--vega .cosmic-art-star {
+  transform: scaleX(1.2) rotate(-20deg);
+}
+.cosmic-art--betelgeuse .cosmic-art-star {
+  width: 92px;
+  height: 92px;
+  left: calc(50% - 46px);
+  top: calc(50% - 46px);
+  background:
+    radial-gradient(ellipse at 30% 38%, #ffd28c99, transparent 23%),
+    radial-gradient(ellipse at 65% 68%, #713d2380, transparent 27%),
+    radial-gradient(ellipse at 70% 22%, #8a392766, transparent 23%),
+    radial-gradient(circle at 38% 35%, #ffd1a0, #df8753 55%, #b94e30);
+}
+.cosmic-art-system {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-24deg) scaleY(0.66);
+}
+.cosmic-art-system .cosmic-art-star {
+  width: 19px;
+  height: 19px;
+  left: calc(50% - 9.5px);
+  top: calc(50% - 9.5px);
+  transform: scaleY(1.52);
+}
+.cosmic-art-orbit {
+  width: calc(52px + var(--orbit) * 24px);
+  height: calc(52px + var(--orbit) * 24px);
+  border: 1px solid #b3c5e321;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) rotate(calc(35deg + var(--orbit) * 107deg));
+}
+.cosmic-art-orbit::after {
+  content: "";
+  position: absolute;
+  width: calc(5px + var(--orbit) * 0.65px);
+  height: calc(5px + var(--orbit) * 0.65px);
+  border-radius: 50%;
+  left: 15%;
+  top: 12%;
+  background: var(--world-color);
+  box-shadow:
+    inset -2px -1px 2px #0008,
+    0 0 4px #a1b3d51c;
+}
+.cosmic-art--proxima-centauri .cosmic-art-orbit {
+  width: 160px;
+  height: 160px;
+}
+.cosmic-art--proxima-centauri .cosmic-art-system .cosmic-art-star {
+  width: 29px;
+  height: 29px;
+  left: calc(50% - 14.5px);
+  top: calc(50% - 14.5px);
+}
+.cosmic-art--black-hole {
+  background:
+    radial-gradient(
+      ellipse at 50% 62%,
+      color-mix(in srgb, var(--cosmic-accent), transparent 86%),
+      transparent 65%
+    ),
+    #020510;
+}
+.cosmic-art-lens {
+  position: absolute;
+  width: 65px;
+  height: 65px;
+  left: calc(50% - 32.5px);
+  top: calc(50% - 32.5px);
+  border-radius: 50%;
+  border: 5px solid var(--cosmic-accent);
+  box-shadow:
+    0 0 9px var(--cosmic-accent),
+    inset 0 0 6px #fff8;
+  filter: blur(0.6px);
+}
+.cosmic-art-disk {
+  position: absolute;
+  width: 182px;
+  height: 35px;
+  top: calc(50% - 7px);
+  left: calc(50% - 91px);
+  border: 9px solid var(--cosmic-accent);
+  border-radius: 50%;
+  transform: rotate(-9deg);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--cosmic-accent), transparent 40%);
+  filter: blur(1px);
+}
+.cosmic-art-shadow {
+  position: absolute;
+  width: 49px;
+  height: 44px;
+  border-radius: 50%;
+  left: calc(50% - 24.5px);
+  top: calc(50% - 26px);
+  background: #01030a;
+}
+.cosmic-art--m87 .cosmic-art-lens {
+  transform: rotate(25deg);
+  border-width: 7px 3px 11px 8px;
+}
+.cosmic-art--m87 .cosmic-art-disk {
+  opacity: 0.7;
+  transform: rotate(17deg);
+}
+
+/* This mode owns its overlays only while exploring beyond the Solar System. */
+#app[data-view="cosmic"] .observation,
+#app[data-view="cosmic"] .instrument,
+#app[data-view="cosmic"] #system-settings,
+#app[data-view="cosmic"] #satellite-nav,
+#app[data-view="cosmic"] #detail-readout,
+#app[data-view="cosmic"] #eclipse-banner,
+#app[data-view="cosmic"] .planet-dock,
+#app[data-view="cosmic"] .date-control,
+#app[data-view="cosmic"] .view-switch {
+  display: none !important;
+}
+#app[data-view="cosmic"] #universe,
+#app[data-view="cosmic"] #world-labels {
+  left: 285px;
+  right: 32px;
+  top: 0;
+  bottom: 22px;
+}
+#app[data-view="cosmic"] .view-tools {
+  left: calc(50% + 126px);
+  right: auto;
+  width: max-content;
+  transform: translateX(-50%);
+}
+#app[data-view="cosmic"] .view-caption {
+  left: 285px;
+  right: 32px;
+  bottom: 2px;
+}
+#cosmic-overlay {
+  position: absolute;
+  left: 40px;
+  top: 23px;
+  bottom: 36px;
+  width: 239px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+#cosmic-overlay button,
+#cosmic-overlay details,
+#cosmic-overlay input,
+#cosmic-overlay select {
+  pointer-events: auto;
+}
+.cosmic-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #99b3cb;
+  font-size: 10px;
+  padding: 6px 0;
+  min-height: 32px;
+}
+.cosmic-home svg {
+  width: 16px;
+  height: 16px;
+}
+.cosmic-home:hover {
+  color: #e1f4ff;
+}
+.cosmic-kind {
+  font-size: 10px;
+  color: var(--cosmic-accent, #9fbed9);
+  margin-top: 18px;
+}
+#cosmic-title {
+  font-size: 44px;
+  font-weight: 400;
+  letter-spacing: -1.4px;
+  line-height: 1.1;
+  margin-top: 8px;
+  overflow-wrap: normal;
+}
+#cosmic-title:focus {
+  outline: none;
+}
+.cosmic-tagline {
+  font-size: 11px;
+  color: #bbcee3;
+  margin-top: 8px;
+}
+.cosmic-location {
+  color: #839ab5;
+  font-size: 9px;
+  margin-top: 13px;
+  line-height: 1.6;
+}
+#cosmic-details {
+  border-top: 1px solid var(--line);
+  margin-top: 22px;
+  overflow: hidden;
+  min-height: 36px;
+}
+#cosmic-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: #c6d9eb;
+  cursor: pointer;
+  min-height: 38px;
+  list-style: none;
+}
+#cosmic-details > summary::-webkit-details-marker,
+#cosmic-model > summary::-webkit-details-marker {
+  display: none;
+}
+#cosmic-details > summary svg,
+#cosmic-model > summary svg {
+  width: 14px;
+  height: 14px;
+  color: #7e99b7;
+}
+#cosmic-details[open] > summary > svg,
+#cosmic-model[open] > summary > svg {
+  transform: rotate(180deg);
+}
+.cosmic-detail-content {
+  max-height: min(37vh, 354px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #345071 transparent;
+  padding: 4px 8px 12px 0;
+}
+#cosmic-body-name {
+  margin-bottom: 10px;
+  font-size: 21px;
+}
+#cosmic-description {
+  color: #9db2c9;
+  font-size: 11px;
+  line-height: 1.7;
+}
+#cosmic-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 10px;
+  margin: 21px 0;
+}
+#cosmic-facts div {
+  min-width: 0;
+}
+#cosmic-facts dt {
+  font-size: 9px;
+  color: #7f98b3;
+  margin-bottom: 5px;
+}
+#cosmic-facts dd {
+  font-family: "Outfit", sans-serif;
+  font-size: 14px;
+  margin: 0;
+  color: #d5e5f2;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+#cosmic-model {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+#cosmic-model > summary {
+  display: flex;
+  justify-content: space-between;
+  cursor: pointer;
+  color: #abc8dd;
+  list-style: none;
+  font-size: 10px;
+  min-height: 27px;
+}
+#cosmic-model-note {
+  margin-top: 9px;
+  color: #8ca4be;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.cosmic-unit-note {
+  font-size: 9px;
+  color: #6f89a7;
+  margin-top: 11px;
+}
+#cosmic-sources {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+}
+#cosmic-sources li + li {
+  margin-top: 8px;
+}
+#cosmic-sources a {
+  font-size: 10px;
+  line-height: 1.6;
+  text-decoration: underline;
+  text-decoration-color: #8daec03d;
+  text-underline-offset: 3px;
+}
+.cosmic-mode-controls {
+  margin-top: auto;
+  padding-top: 17px;
+  pointer-events: auto;
+}
+#cosmic-scale-control {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 10px;
+  color: #8aa3be;
+}
+#cosmic-scale {
+  border: 1px solid #97b8d52b;
+  border-radius: 6px;
+  background: #0a1524;
+  color: #c3d9ed;
+  padding: 9px;
+  font-size: 11px;
+  max-width: 100%;
+}
+.cosmic-comparison-control {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  color: #c2d8e9;
+  font-size: 11px;
+  min-height: 34px;
+}
+#cosmic-comparison {
+  width: 15px;
+  height: 15px;
+  accent-color: #a9d5e7;
+}
+#cosmic-scale-note {
+  color: #819bb6;
+  font-size: 9px;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+#cosmic-elapsed {
+  font-size: 10px;
+  color: #8ba6be;
+  margin-right: auto;
+}
+.cosmic-dock {
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  height: 102px;
+  gap: clamp(8px, 1.5vw, 26px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-padding: 12px;
+}
+.cosmic-stop {
+  min-width: 74px;
+  flex-shrink: 0;
+  height: 92px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #829bb6;
+  font-size: 10px;
+}
+.cosmic-stop:hover,
+.cosmic-stop[aria-pressed="true"] {
+  color: #e0f1ff;
+}
+.cosmic-stop > i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: transparent;
+}
+.cosmic-stop[aria-pressed="true"] > i {
+  background: #bce6f8;
+  box-shadow: 0 0 8px #bce6f850;
+}
+.cosmic-overview-icon {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  color: #a3c9dd;
+}
+.cosmic-overview-icon svg {
+  width: 30px;
+  height: 30px;
+  stroke-width: 1;
+}
+.cosmic-body-thumb {
+  display: block;
+  width: 29px;
+  height: 29px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 30% 32%,
+    color-mix(in srgb, var(--body-color), #fff 20%),
+    var(--body-color) 40%,
+    #010710 95%
+  );
+  box-shadow: inset -5px -2px 6px #0006;
+}
+.cosmic-body-thumb--sunlike,
+.cosmic-body-thumb--red-dwarf,
+.cosmic-body-thumb--blue-star,
+.cosmic-body-thumb--red-supergiant {
+  background: radial-gradient(
+    circle at 38% 38%,
+    #fff0d2,
+    var(--body-color) 70%
+  );
+  box-shadow: 0 0 14px color-mix(in srgb, var(--body-color), transparent 68%);
+}
+.cosmic-body-thumb--gas-giant {
+  background:
+    linear-gradient(140deg, transparent 35%, #0009 90%),
+    repeating-linear-gradient(
+      173deg,
+      var(--body-color) 0 4px,
+      color-mix(in srgb, var(--body-color), #e3c7ad 24%) 5px 8px,
+      color-mix(in srgb, var(--body-color), #573b2a 27%) 9px 10px
+    );
+}
+.cosmic-body-thumb--black-hole {
+  border: 3px solid var(--body-color);
+  background: #01040c;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--body-color), transparent 45%);
+}
+@media (max-width: 1100px) and (min-width: 760px) {
+  #cosmic-library {
+    padding: 8px 10px;
+  }
+  .header-right:has(#cosmic-library) .local-tag,
+  .header-right:has(#cosmic-library) > .live-dot {
+    display: none;
+  }
+  #cosmic-overlay {
+    left: 26px;
+    width: 216px;
+  }
+  #app[data-view="cosmic"] #universe,
+  #app[data-view="cosmic"] #world-labels {
+    left: 248px;
+    right: 20px;
+  }
+  #app[data-view="cosmic"] .view-tools {
+    left: calc(50% + 114px);
+  }
+  #cosmic-title {
+    font-size: 38px;
+  }
+  #cosmic-library-modal {
+    width: calc(100vw - 48px);
+  }
+  .cosmic-library-head,
+  .cosmic-library-tools {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .cosmic-library-results {
+    padding: 0 24px;
+  }
+  .cosmic-cards {
+    gap: 12px;
+  }
+  .cosmic-card-copy {
+    padding: 12px;
+  }
+  .cosmic-card strong {
+    font-size: 20px;
+  }
+}
+@media (max-width: 759px) {
+  #cosmic-library {
+    padding: 8px;
+    min-width: 34px;
+    min-height: 36px;
+    border-color: transparent;
+    gap: 0;
+  }
+  #cosmic-library > span {
+    display: none;
+  }
+  #cosmic-library svg {
+    width: 19px;
+    height: 19px;
+  }
+  .header-right:has(#cosmic-library) {
+    gap: 0;
+  }
+  #cosmic-library-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    border-radius: 14px;
+  }
+  .cosmic-library-head {
+    padding: 22px 18px 19px;
+    gap: 8px;
+  }
+  .cosmic-library-head h2 {
+    font-size: 28px;
+    line-height: 1.15;
+    max-width: 245px;
+  }
+  .cosmic-library-head h2 + p {
+    font-size: 11px;
+    line-height: 1.6;
+    max-width: 235px;
+  }
+  .cosmic-library-kicker {
+    font-size: 9px;
+  }
+  #cosmic-close-library {
+    width: 30px;
+    height: 30px;
+    margin-right: -5px;
+    margin-top: -7px;
+  }
+  .cosmic-library-tools {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+    padding: 0 13px 18px;
+  }
+  .cosmic-categories {
+    flex-wrap: nowrap;
+    gap: 2px;
+    overflow: auto;
+    scrollbar-width: none;
+    padding: 4px 0;
+  }
+  .cosmic-categories button {
+    font-size: 10px;
+    padding: 8px 9px;
+    min-height: 38px;
+  }
+  .cosmic-search-wrap {
+    flex-basis: auto;
+    padding: 2px 5px;
+    margin: 0 5px;
+  }
+  #cosmic-search {
+    font-size: 12px;
+    min-height: 30px;
+  }
+  .cosmic-library-results {
+    padding: 0 13px;
+  }
+  .cosmic-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 11px;
+  }
+  .cosmic-art {
+    height: 108px;
+  }
+  .cosmic-card-copy {
+    padding: 12px;
+    min-height: 139px;
+  }
+  .cosmic-card strong {
+    font-size: 20px;
+    line-height: 1.1;
+    margin-top: 7px;
+  }
+  .cosmic-card-kind {
+    font-size: 8px;
+  }
+  .cosmic-card-tagline {
+    font-size: 9px;
+  }
+  .cosmic-card-distance {
+    font-size: 8px;
+    padding-top: 11px;
+  }
+  .cosmic-library-foot {
+    padding: 18px;
+    gap: 15px;
+    font-size: 8px;
+    align-items: baseline;
+  }
+  .cosmic-library-foot > :last-child {
+    max-width: 155px;
+    text-align: right;
+  }
+  .cosmic-empty {
+    min-height: 230px;
+  }
+  #app[data-view="cosmic"] .topbar {
+    justify-content: space-between;
+  }
+  #app[data-view="cosmic"] .header-right {
+    margin-left: auto;
+  }
+  #app[data-view="cosmic"] #cosmic-library {
+    padding: 8px 10px;
+    gap: 7px;
+    border-color: var(--line);
+  }
+  #app[data-view="cosmic"] #cosmic-library > span {
+    display: inline;
+    font-size: 10px;
+  }
+  #cosmic-overlay {
+    display: contents;
+  }
+  .cosmic-heading {
+    position: absolute;
+    left: 20px;
+    top: 10px;
+    right: 65px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .cosmic-home {
+    padding: 4px 0;
+    font-size: 9px;
+    min-height: 28px;
+    gap: 6px;
+  }
+  .cosmic-home svg {
+    width: 14px;
+    height: 14px;
+  }
+  .cosmic-kind {
+    display: none;
+  }
+  #cosmic-title {
+    font-size: 32px;
+    letter-spacing: -0.7px;
+    margin-top: 4px;
+  }
+  .cosmic-tagline {
+    display: none;
+  }
+  .cosmic-location {
+    margin-top: 6px;
+    font-size: 8px;
+  }
+  #cosmic-details {
+    position: absolute;
+    bottom: 9px;
+    left: 13px;
+    right: 13px;
+    z-index: 10;
+    margin: 0;
+    background: #0b1726ee;
+    border: 1px solid #8da7c32b;
+    border-radius: 9px;
+    backdrop-filter: blur(14px);
+  }
+  #cosmic-details > summary {
+    min-height: 43px;
+    padding: 10px 14px;
+    font-size: 11px;
+  }
+  .cosmic-detail-content {
+    padding: 0 16px 16px;
+    max-height: min(310px, calc(100dvh - 380px));
+  }
+  #cosmic-description {
+    font-size: 11px;
+  }
+  #cosmic-facts {
+    gap: 17px;
+  }
+  #cosmic-facts dd {
+    font-size: 15px;
+  }
+  #cosmic-details[open] {
+    box-shadow: 0 -16px 40px #02081370;
+  }
+  #cosmic-scale-control {
+    flex-shrink: 0;
+    width: 155px;
+    gap: 0;
+  }
+  #cosmic-scale-control > span {
+    display: none;
+  }
+  #cosmic-scale {
+    padding: 10px 7px;
+    font-size: 10px;
+    width: 100%;
+    min-height: 38px;
+  }
+  .cosmic-mode-controls {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    bottom: 63px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0;
+    padding: 0;
+  }
+  #cosmic-scale-note {
+    font-size: 8px;
+    margin: 0;
+    max-width: 180px;
+    text-shadow: 0 1px 5px #050b16;
+  }
+  .cosmic-comparison-control {
+    font-size: 10px;
+    min-width: 170px;
+    gap: 7px;
+  }
+  #app[data-view="cosmic"] #universe,
+  #app[data-view="cosmic"] #world-labels {
+    left: 0;
+    right: 0;
+    top: 99px;
+    bottom: 108px;
+  }
+  #app[data-view="cosmic"] .view-tools {
+    left: auto;
+    right: 12px;
+    bottom: 115px;
+    top: auto;
+    transform: none;
+    width: auto;
+  }
+  #app[data-view="cosmic"] .view-caption {
+    display: none;
+  }
+  #app[data-view="cosmic"] #cosmic-elapsed {
+    font-size: 8px;
+    margin-left: auto;
+    margin-right: 7px;
+  }
+  .cosmic-dock {
+    height: 80px;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 0 5px;
+  }
+  .cosmic-stop {
+    min-width: 64px;
+    height: 77px;
+    padding: 6px;
+    font-size: 9px;
+    gap: 6px;
+  }
+  .cosmic-body-thumb,
+  .cosmic-overview-icon {
+    width: 25px;
+    height: 25px;
+  }
+  .cosmic-overview-icon svg {
+    width: 25px;
+    height: 25px;
+  }
+}
+@media (max-width: 359px) {
+  .topbar:has(#cosmic-library) .view-switch #system-view span {
+    display: none;
+  }
+  .topbar:has(#cosmic-library) .view-switch #system-view svg {
+    display: inline;
+  }
+  .cosmic-categories button {
+    padding: 8px 6px;
+    font-size: 9px;
+  }
+  .cosmic-card-copy {
+    padding: 10px;
+  }
+  .cosmic-card strong {
+    font-size: 18px;
+  }
+  #cosmic-title {
+    font-size: 28px;
+  }
+  #cosmic-scale-control {
+    width: 139px;
+  }
+  .cosmic-mode-controls {
+    gap: 10px;
+  }
+}
+@media (min-width: 760px) and (max-height: 800px) {
+  #cosmic-overlay {
+    top: 12px;
+    bottom: 10px;
+  }
+  .cosmic-kind {
+    margin-top: 7px;
+  }
+  #cosmic-title {
+    font-size: 37px;
+  }
+  .cosmic-location {
+    margin-top: 7px;
+  }
+  #cosmic-details {
+    margin-top: 12px;
+  }
+  .cosmic-detail-content {
+    max-height: max(100px, calc(100dvh - 540px));
+  }
+  .cosmic-mode-controls {
+    padding-top: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cosmic-card {
+    transition: none;
+  }
+}

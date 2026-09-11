@@ -16,6 +16,8 @@ import {
 } from "./physics.ts";
 import type { ImpactInput, ImpactResult } from "./physics.ts";
 import { Observatory } from "./scene.ts";
+import { CosmicUI } from "./cosmic-ui.ts";
+import { getCosmicDestination } from "./cosmic-data.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
   document.querySelector<T>(selector)!;
@@ -51,7 +53,7 @@ app.innerHTML = `
  <header class="topbar">
   <a class="brand" href="/" aria-label="Asterion home">${icon("orbit")}<span>Asterion<small>Orbital observatory</small></span></a>
   <nav class="view-switch" aria-label="View"><button id="planet-view" class="active" aria-label="Planet view">${icon("orbit")}<span>Planet view</span></button><button id="system-view" aria-label="Solar system">${icon("expand")}<span>Solar system</span></button></nav>
-  <div class="header-right"><span class="live-dot"></span><span class="local-tag">Your corner of the cosmos</span><button id="science" class="icon-button" aria-label="Science & sources" title="Science & sources">${icon("info")}</button></div>
+  <div class="header-right"><button id="cosmic-library" aria-label="Explore beyond">${icon("orbit")}<span>Explore beyond</span></button><button id="science" class="icon-button" aria-label="Science & sources" title="Science & sources">${icon("info")}</button></div>
  </header>
  <main>
   <div id="universe"></div><div id="world-labels"></div><nav id="satellite-nav" aria-label="Moon destinations" hidden></nav>
@@ -193,6 +195,64 @@ try {
   $("#error").hidden = false;
   throw error;
 }
+let solarJourney: { paused: boolean; speed: number; option: string } | null =
+  null;
+const cosmicUI = new CosmicUI({
+  onDestination: selectCosmicDestination,
+  onHome: () => $("#system-view").click(),
+  onBody: selectCosmicBody,
+  onScale: (real) => scene.setCosmicScale(real),
+  onComparison: (show) => {
+    scene.setCosmicComparison(show);
+    cosmicUI.selectBody();
+    app.dataset.cosmicBody = "";
+  },
+});
+$("#cosmic-library").onclick = () => cosmicUI.openLibrary();
+scene.onCosmicSelect = selectCosmicBody;
+function selectCosmicDestination(id: string) {
+  const destination = getCosmicDestination(id);
+  if (!destination) return;
+  if (!solarJourney)
+    solarJourney = {
+      paused,
+      speed,
+      option: $<HTMLSelectElement>("#speed").value,
+    };
+  running = false;
+  for (const selector of [
+    "#satellite-nav",
+    "#impact-playback",
+    "#eclipse-banner",
+    "#review-aftermath",
+  ])
+    $(selector).hidden = true;
+  app.dataset.encounter = "false";
+  app.dataset.view = "cosmic";
+  app.dataset.destination = id;
+  app.dataset.cosmicBody = "";
+  $("#instrument").classList.remove("watching");
+  scene.openCosmic(destination);
+  cosmicUI.showDestination(destination);
+  $("#view-hint").textContent = "Drag to orbit · Scroll or pinch to explore";
+  updatePause();
+}
+function selectCosmicBody(id?: string) {
+  scene.focusCosmicBody(id);
+  cosmicUI.selectBody(id);
+  app.dataset.cosmicBody = id ?? "";
+}
+function restoreSolarJourney() {
+  cosmicUI.hideDestination();
+  delete app.dataset.destination;
+  delete app.dataset.cosmicBody;
+  if (solarJourney) {
+    paused = solarJourney.paused;
+    speed = solarJourney.speed;
+    $<HTMLSelectElement>("#speed").value = solarJourney.option;
+    solarJourney = null;
+  }
+}
 const number = (n: number, d = 1) =>
   n.toLocaleString(undefined, { maximumFractionDigits: d });
 const length = (meters: number) =>
@@ -206,6 +266,7 @@ const energy = (j: number) =>
 const scientific = (n: number) => n.toExponential(2).replace("e+", " × 10^");
 const planet = () => BODIES.find((p) => p.id === selected)!;
 function selectPlanet(id: string) {
+  restoreSolarJourney();
   selected = id;
   running = false;
   scene.focus(id);
@@ -280,6 +341,7 @@ function selectPlanet(id: string) {
   $("#view-hint").innerHTML =
     "Drag to orbit <i>·</i> Scroll or pinch to explore";
   updatePreview();
+  updatePause();
 }
 function tab(name: "explore" | "impact") {
   $("#instrument").classList.remove("collapsed");
@@ -334,9 +396,18 @@ function updatePause() {
     "aria-label",
     paused ? "Resume simulation" : "Pause simulation",
   );
-  $("#physics-status").textContent = paused
-    ? "Orbital time paused"
-    : "9-body gravity";
+  $("#physics-status").textContent =
+    scene.view === "cosmic"
+      ? paused
+        ? "Exploration paused"
+        : scene.cosmic?.destination.kind === "system"
+          ? "Reference orbits"
+          : scene.cosmic?.destination.kind === "black-hole"
+            ? "Black-hole visualization"
+            : "Stellar view"
+      : paused
+        ? "Orbital time paused"
+        : "9-body gravity";
 }
 function renderResult(result: ImpactResult, input: ImpactInput) {
   const name =
@@ -514,6 +585,7 @@ $("#open-details").onclick = () => tab("explore");
 $("#collapse-panel").onclick = () =>
   $("#instrument").classList.toggle("collapsed");
 $("#system-view").onclick = () => {
+  restoreSolarJourney();
   $("#satellite-nav").hidden = true;
   running = false;
   $("#impact-playback").hidden = true;
@@ -533,6 +605,7 @@ $("#system-view").onclick = () => {
   $("#planet-description").textContent =
     "Follow the paths of eight planets, bound together by gravity. Select a world to get closer.";
   $("#view-hint").textContent = "Select a planet · Scroll to explore";
+  updatePause();
 };
 $("#planet-view").onclick = () => selectPlanet(selected);
 $("#moon-system").onclick = () => {
@@ -654,11 +727,14 @@ $<HTMLInputElement>("#label-toggle").onchange = (e) =>
   (scene.showLabels = (e.target as HTMLInputElement).checked);
 $("#zoom-in").onclick = () => scene.zoom(0.8);
 $("#zoom-out").onclick = () => scene.zoom(1.25);
-$("#reset-camera").onclick = () =>
-  scene.view === "planet" ? selectPlanet(selected) : scene.system();
+$("#reset-camera").onclick = () => {
+  if (scene.view === "cosmic") scene.resetCosmicCamera();
+  else if (scene.view === "planet") selectPlanet(selected);
+  else scene.system();
+};
 $("#capture").onclick = () => {
   scene.screenshot();
-  toast("Planet image saved.");
+  toast("View image saved.");
 };
 $("#fullscreen").onclick = async () => {
   try {
@@ -806,14 +882,14 @@ document.addEventListener("keydown", (e) => {
     ["INPUT", "SELECT", "TEXTAREA"].includes(
       (e.target as HTMLElement).tagName,
     ) ||
-    $<HTMLDialogElement>("#science-modal").open
+    document.querySelector("dialog[open]")
   )
     return;
   if (e.code === "Space") {
     e.preventDefault();
     $("#pause").click();
   }
-  if (e.key === "[" || e.key === "]") {
+  if (scene.view !== "cosmic" && (e.key === "[" || e.key === "]")) {
     const i = PLANETS.findIndex((p) => p.id === selected);
     selectPlanet(PLANETS[(i + (e.key === "]" ? 1 : 8)) % 9].id);
   }
@@ -838,18 +914,22 @@ function animate(now: number) {
   if (document.hidden) return;
   const dt = Math.min(elapsed, 0.5);
   if (!paused && !running) {
-    const days = dt * speed;
-    const next = fromJulian(sim.jd + days);
-    if (next.getUTCFullYear() <= 2050) sim.advance(days);
+    if (scene.view === "cosmic") scene.advanceCosmic(dt, speed);
     else {
-      paused = true;
-      updatePause();
-      toast("Reached the model’s 2050 date limit.");
+      const days = dt * speed;
+      const next = fromJulian(sim.jd + days);
+      if (next.getUTCFullYear() <= 2050) sim.advance(days);
+      else {
+        paused = true;
+        updatePause();
+        toast("Reached the model’s 2050 date limit.");
+      }
     }
   }
   scene.update(sim, dt, now);
   if (now - lastUI > 500) {
-    updateDate();
+    if (scene.view === "cosmic") cosmicUI.setElapsed(scene.cosmicDays);
+    else updateDate();
     lastUI = now;
   }
 }
