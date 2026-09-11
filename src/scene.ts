@@ -1,218 +1,1189 @@
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { PLANETS, ELEMENTS } from './data.ts';
-import type { Planet } from './data.ts';
-import { planetPosition } from './physics.ts';
-import type { SolarSystem, ImpactInput, ImpactResult } from './physics.ts';
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { PLANETS, ELEMENTS } from "./data.ts";
+import {
+  BODIES,
+  MOONS,
+  parentOf,
+  satellitePosition,
+  ephemerides,
+  hasEphemeris,
+} from "./satellites.ts";
+import {
+  surfaceVertex,
+  surfaceFragment,
+  simpleVertex,
+  cloudFragment,
+  atmosphereFragment,
+} from "./shaders.ts";
+import { TerrainStream } from "./terrain.ts";
+import type { Dataset } from "./terrain.ts";
+import { ImpactSequence } from "./impact-scene.ts";
+import type { Playback } from "./impact-scene.ts";
+import type { Planet } from "./data.ts";
+import { planetPosition } from "./physics.ts";
+import type { SolarSystem, ImpactInput, ImpactResult } from "./physics.ts";
 
-type World = {root:THREE.Group; spin:THREE.Group; mesh:THREE.Mesh; material:THREE.ShaderMaterial; clouds?:THREE.Mesh; scars:THREE.Group; label:HTMLButtonElement};
-const vertex=`varying vec2 vUv; varying vec3 vNormal; varying vec3 vWorld;
-void main(){vUv=uv;vNormal=normalize(mat3(modelMatrix)*normal);vec4 w=modelMatrix*vec4(position,1.);vWorld=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`;
-const surface=`uniform sampler2D dayMap;uniform sampler2D nightMap;uniform vec3 sunDir;uniform vec3 tint;uniform float earth;uniform float star;
-varying vec2 vUv;varying vec3 vNormal;varying vec3 vWorld;
-void main(){vec3 n=normalize(vNormal);vec3 viewDir=normalize(cameraPosition-vWorld);float d=dot(n,normalize(sunDir));
-vec3 day=texture2D(dayMap,vUv).rgb;day=pow(day,vec3(2.2));
-float diffuse=max(d,0.);vec3 color=day*(.025+diffuse*1.5);
-if(earth>.5){vec3 night=pow(texture2D(nightMap,vUv).rgb,vec3(2.2));color+=night*smoothstep(.12,-.2,d)*1.3;
-float ocean=step(day.r*1.3,day.b)*step(day.g*.9,day.b);vec3 halfD=normalize(normalize(sunDir)+viewDir);color+=vec3(.38,.5,.6)*pow(max(dot(n,halfD),0.),75.)*ocean*diffuse;
-float rim=pow(1.-max(dot(n,viewDir),0.),3.5);color+=vec3(.04,.22,.52)*rim*smoothstep(-.3,.8,d);}
-if(star>.5)color=day*2.3+vec3(.26,.085,.008);
-gl_FragColor=vec4(color,1.);
-#include <tonemapping_fragment>
-#include <colorspace_fragment>
-}`;
-const atmosphere=`uniform vec3 glow;uniform vec3 sunDir;varying vec3 vNormal;varying vec3 vWorld;
-void main(){vec3 n=normalize(vNormal);vec3 v=normalize(cameraPosition-vWorld);float rim=pow(max(0.,1.-abs(dot(n,v))),3.);
-float light=smoothstep(-.35,.8,dot(n,normalize(sunDir)));gl_FragColor=vec4(glow,rim*light*.56);}`;
-
-function rng(seed:number){return ()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t^=t+Math.imul(t^t>>>7,61|t);return ((t^t>>>14)>>>0)/4294967296;};}
-function glowTexture(){const c=document.createElement('canvas');c.width=c.height=128;const ctx=c.getContext('2d')!;const g=ctx.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,'rgba(255,246,220,1)');g.addColorStop(.14,'rgba(255,200,120,.9)');g.addColorStop(.4,'rgba(255,118,35,.25)');g.addColorStop(1,'rgba(255,60,0,0)');ctx.fillStyle=g;ctx.fillRect(0,0,128,128);return new THREE.CanvasTexture(c);}
-function craterTexture(gas=false){
- const c=document.createElement('canvas');c.width=c.height=256;const ctx=c.getContext('2d')!;
- const g=ctx.createRadialGradient(128,128,0,128,128,126);
- g.addColorStop(0,gas?'rgba(23,14,12,.92)':'rgba(25,13,8,.95)');g.addColorStop(.4,'rgba(38,20,12,.94)');g.addColorStop(.57,'rgba(85,53,28,.87)');g.addColorStop(.7,gas?'rgba(58,37,25,.4)':'rgba(187,128,64,.78)');g.addColorStop(.79,'rgba(70,42,22,.45)');g.addColorStop(1,'rgba(30,20,10,0)');ctx.fillStyle=g;ctx.fillRect(0,0,256,256);
- const random=rng(42);for(let i=0;i<2200;i++){const x=random()*256,y=random()*256,r=Math.hypot(x-128,y-128)/128;if(r<.88){ctx.fillStyle=`rgba(${random()>.5?'237,186,111':'0,0,0'},${.12*(1-r)})`;ctx.fillRect(x,y,random()*3,random()*3);}}
- return new THREE.CanvasTexture(c);
+type World = {
+  root: THREE.Group;
+  spin: THREE.Group;
+  mesh: THREE.Mesh;
+  material: THREE.ShaderMaterial;
+  clouds?: THREE.Mesh;
+  atmosphere?: THREE.Mesh;
+  scars: THREE.Group;
+  label: HTMLButtonElement;
+  stream?: TerrainStream;
+};
+function rng(seed: number) {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
-
+function glowTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, "rgba(255,246,220,1)");
+  g.addColorStop(0.14, "rgba(255,200,120,.9)");
+  g.addColorStop(0.4, "rgba(255,118,35,.25)");
+  g.addColorStop(1, "rgba(255,60,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
 export class Observatory {
- renderer:THREE.WebGLRenderer;scene=new THREE.Scene();camera=new THREE.PerspectiveCamera(38,1,.005,5000);controls:OrbitControls;
- worlds=new Map<string,World>();view:'planet'|'system'='planet';selected='earth';trueScale=false;showOrbits=true;showLabels=true;
- root=new THREE.Group();orbitGroup=new THREE.Group();belt=new THREE.Group();worldGroup=new THREE.Group();
- targetLocal:THREE.Vector3|null=null;aiming=false;targetMarker:THREE.Group;
- private manager=new THREE.LoadingManager();private loader:THREE.TextureLoader;private textures=new Map<string,THREE.Texture>();
- private glow=glowTexture();private crater=craterTexture();private gasScar=craterTexture(true);
- private desiredCamera:THREE.Vector3|null=null;private selectedJD=2451545;private mobile=false;private lastSpinJD=0;
- private entry:{group:THREE.Group;rock:THREE.Mesh;trail:THREE.Line;flash:THREE.Sprite;ring:THREE.Mesh;dust:THREE.Points;velocities:Float32Array;result:ImpactResult;input:ImpactInput;t:number;done:boolean;recordScar:boolean;onFinish:()=>void;onHit:()=>void}|null=null;
- onSelect:(id:string)=>void=()=>{};onTarget:(lat:number,lon:number)=>void=()=>{};onFrame:(fps:number)=>void=()=>{};
- container:HTMLElement;labelContainer:HTMLElement;private frameCounter=0;private fpsTime=0;private reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
- constructor(container:HTMLElement,labelContainer:HTMLElement,onReady:()=>void,onError:(message:string)=>void){
-  this.container=container;this.labelContainer=labelContainer;this.mobile=innerWidth<760;
-  this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'high-performance',preserveDrawingBuffer:true});
-  this.renderer.setPixelRatio(Math.min(devicePixelRatio,this.mobile?1.6:2));this.renderer.setClearColor(0x000000,0);this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.3;
-  container.append(this.renderer.domElement);this.renderer.domElement.setAttribute('aria-label','Interactive 3D solar system. Drag to orbit, pinch or scroll to zoom.');
-  this.renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();onError('The graphics context was interrupted. Reload to reopen the observatory.');});
-  this.manager.onLoad=onReady;this.manager.onError=url=>onError(`A planet texture could not load: ${url}. Reload to try again.`);this.loader=new THREE.TextureLoader(this.manager);
-  this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.enableDamping=true;this.controls.dampingFactor=.07;this.controls.enablePan=false;this.controls.minDistance=1.12;this.controls.maxDistance=12;this.controls.rotateSpeed=.55;this.controls.zoomSpeed=.75;
-  this.controls.addEventListener('start',()=>{this.desiredCamera=null;});
-  this.scene.add(this.root);this.root.add(this.worldGroup,this.orbitGroup,this.belt);this.scene.add(new THREE.AmbientLight(0xffffff,.14));
-  const light=new THREE.DirectionalLight(0xffefdc,2);light.position.set(-4,3,6);this.scene.add(light);
-  this.makeStars();
-  for(const p of PLANETS)this.makeWorld(p);
-  this.makeOrbits();this.makeBelt();this.targetMarker=this.makeTarget();
-  this.focus('earth',true);
-  new ResizeObserver(()=>this.resize()).observe(container);
-  let down={x:0,y:0};container.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY};});
-  container.addEventListener('pointerup',e=>{if(Math.hypot(e.clientX-down.x,e.clientY-down.y)<7)this.pick(e.clientX,e.clientY);});
- }
- texture(name:string){if(!this.textures.has(name)){const t=this.loader.load(`/textures/${name}`);t.anisotropy=Math.min(8,this.renderer.capabilities.getMaxAnisotropy());this.textures.set(name,t);}return this.textures.get(name)!;}
- makeWorld(p:Planet){
-  const root=new THREE.Group(),spin=new THREE.Group(),scars=new THREE.Group();root.add(spin);spin.rotation.z=p.tilt*Math.PI/180;
-  const mat=new THREE.ShaderMaterial({vertexShader:vertex,fragmentShader:surface,uniforms:{dayMap:{value:this.texture(p.id+'.jpg')},nightMap:{value:this.texture('earth-night.jpg')},sunDir:{value:new THREE.Vector3(-3,1.5,4)},tint:{value:new THREE.Color(p.color)},earth:{value:p.id==='earth'?1:0},star:{value:p.id==='sun'?1:0}}});
-  const mesh=new THREE.Mesh(new THREE.SphereGeometry(1,this.mobile?80:128,this.mobile?48:80),mat);spin.add(mesh);mesh.add(scars);mesh.userData.id=p.id;
-  if(p.atmosphere){
-   const a=new THREE.Mesh(new THREE.SphereGeometry(1.018,80,48),new THREE.ShaderMaterial({vertexShader:vertex,fragmentShader:atmosphere,uniforms:{glow:{value:new THREE.Color(p.id==='earth'?'#4d9cff':p.color)},sunDir:mat.uniforms.sunDir},transparent:true,side:THREE.BackSide,blending:THREE.AdditiveBlending,depthWrite:false}));root.add(a);
+  renderer: THREE.WebGLRenderer;
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(38, 1, 0.005, 5000);
+  controls: OrbitControls;
+  worlds = new Map<string, World>();
+  view: "planet" | "system" | "moons" = "planet";
+  selected = "earth";
+  trueScale = false;
+  showOrbits = true;
+  showLabels = true;
+  root = new THREE.Group();
+  orbitGroup = new THREE.Group();
+  belt = new THREE.Group();
+  worldGroup = new THREE.Group();
+  targetLocal: THREE.Vector3 | null = null;
+  aiming = false;
+  targetMarker: THREE.Group;
+  private manager = new THREE.LoadingManager();
+  private loader: THREE.TextureLoader;
+  private textures = new Map<string, THREE.Texture>();
+  private glow = glowTexture();
+  private assetsReady = false;
+  private readyCallback?: () => void;
+  private desiredCamera: THREE.Vector3 | null = null;
+  private followAsteroid = false;
+  private selectedJD = 2451545;
+  private mobile = false;
+  private venusSurface = false;
+  entry: ImpactSequence | null = null;
+  private datasets: Record<string, Dataset> = {};
+  private highQuality = true;
+  private autoDetail = true;
+  private terrainEnabled = true;
+  private detailTick = 0;
+  private lastSimulation?: SolarSystem;
+  private sunlight = new THREE.DirectionalLight(0xffefdc, 2);
+  private eclipseDemo = false;
+  private moonParent = "earth";
+  private moonGuides = new THREE.Group();
+  private localCamera = new THREE.Vector3();
+  private guideJD = 0;
+  private guideTick = 0;
+  onDetail: (text: string) => void = () => {};
+  onPlayback: (value: Playback) => void = () => {};
+  onSelect: (id: string) => void = () => {};
+  onTarget: (lat: number, lon: number) => void = () => {};
+  onFrame: (fps: number) => void = () => {};
+  container: HTMLElement;
+  labelContainer: HTMLElement;
+  private frameCounter = 0;
+  private fpsTime = 0;
+  constructor(
+    container: HTMLElement,
+    labelContainer: HTMLElement,
+    onReady: () => void,
+    onError: (message: string) => void,
+  ) {
+    this.container = container;
+    this.labelContainer = labelContainer;
+    this.mobile = innerWidth < 760;
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      powerPreference: "high-performance",
+      preserveDrawingBuffer: true,
+    });
+    this.renderer.setPixelRatio(
+      Math.min(devicePixelRatio, this.mobile ? 1.6 : 2),
+    );
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.3;
+    container.append(this.renderer.domElement);
+    this.renderer.domElement.setAttribute(
+      "aria-label",
+      "Interactive 3D solar system. Drag to orbit, pinch or scroll to zoom.",
+    );
+    this.renderer.domElement.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      onError(
+        "The graphics context was interrupted. Reload to reopen the observatory.",
+      );
+    });
+    this.readyCallback = onReady;
+    this.manager.onLoad = () => {
+      this.assetsReady = true;
+    };
+    this.manager.onError = (url) =>
+      onError(`A planet texture could not load: ${url}. Reload to try again.`);
+    this.loader = new THREE.TextureLoader(this.manager);
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.07;
+    this.controls.enablePan = false;
+    this.controls.minDistance = 1.12;
+    this.controls.maxDistance = 12;
+    this.controls.rotateSpeed = 0.55;
+    this.controls.zoomSpeed = 0.75;
+    this.controls.addEventListener("start", () => {
+      this.desiredCamera = null;
+    });
+    this.scene.add(this.root);
+    this.root.add(this.worldGroup, this.orbitGroup, this.belt);
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.14));
+    this.sunlight.position.set(-4, 3, 6);
+    this.scene.add(this.sunlight);
+    this.scene.add(this.moonGuides);
+    this.makeStars();
+    for (const p of BODIES) this.makeWorld(p);
+    this.makeOrbits();
+    this.makeBelt();
+    this.targetMarker = this.makeTarget();
+    this.focus("earth", true);
+    void fetch("/tiles/manifest.json")
+      .then((r) => {
+        if (!r.ok) throw new Error("Detail manifest unavailable");
+        return r.json();
+      })
+      .then((data) => {
+        this.datasets = data;
+        this.prepareDetail();
+      })
+      .catch(() => this.onDetail("Base imagery · detail unavailable"));
+    new ResizeObserver(() => this.resize()).observe(container);
+    let down = { x: 0, y: 0 };
+    container.addEventListener("pointerdown", (e) => {
+      down = { x: e.clientX, y: e.clientY };
+    });
+    container.addEventListener("pointerup", (e) => {
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) < 7)
+        this.pick(e.clientX, e.clientY);
+    });
   }
-  let clouds:THREE.Mesh|undefined;
-  if(p.id==='earth'){
-   clouds=new THREE.Mesh(new THREE.SphereGeometry(1.005,96,64),new THREE.MeshPhongMaterial({map:this.texture('clouds.jpg'),alphaMap:this.texture('clouds.jpg'),transparent:true,opacity:.52,depthWrite:false,shininess:8}));spin.add(clouds);
+  texture(name: string) {
+    if (!this.textures.has(name)) {
+      const t = this.loader.load(`/textures/${name}?v=20260911`);
+      t.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+      t.wrapS = THREE.RepeatWrapping;
+      if (name.endsWith("-height.png")) {
+        t.generateMipmaps = false;
+        t.minFilter = THREE.LinearFilter;
+      }
+      this.textures.set(name, t);
+    }
+    return this.textures.get(name)!;
   }
-  if(p.id==='saturn'||p.id==='uranus'){
-   const inner=p.id==='saturn'?1.23:1.8,outer=p.id==='saturn'?2.32:2.06;
-   const geo=new THREE.RingGeometry(inner,outer,180,8),positions=geo.attributes.position,uv=geo.attributes.uv;
-   for(let i=0;i<positions.count;i++)uv.setXY(i,(Math.hypot(positions.getX(i),positions.getY(i))-inner)/(outer-inner),.5);
-   const rings=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:this.texture('saturn-ring.png'),color:p.id==='saturn'?'#dccdab':'#6c9d9e',transparent:true,opacity:p.id==='saturn'?.87:.3,side:THREE.DoubleSide,depthWrite:false}));rings.rotation.x=-Math.PI/2;spin.add(rings);
+  makeWorld(p: Planet) {
+    const root = new THREE.Group(),
+      spin = new THREE.Group(),
+      scars = new THREE.Group();
+    root.add(spin);
+    spin.rotation.z = (p.tilt * Math.PI) / 180;
+    const uniforms: Record<string, THREE.IUniform> = {
+      dayMap: { value: this.texture(p.id + ".jpg") },
+      nightMap: { value: this.texture("earth-night.jpg") },
+      cloudMap: { value: this.texture("clouds.jpg") },
+      specularMap: { value: this.texture("earth-specular.jpg") },
+      sunDir: { value: new THREE.Vector3(-3, 1.5, 4) },
+      earth: { value: p.id === "earth" ? 1 : 0 },
+      star: { value: p.id === "sun" ? 1 : 0 },
+      heightMap: { value: this.texture("earth.jpg") },
+      heightRange: { value: new THREE.Vector2(0, 0) },
+      heightTexel: { value: new THREE.Vector2(1 / 4096, 1 / 2048) },
+      terrain: { value: 1 },
+      reliefEnabled: { value: 0 },
+      objectNormalMatrix: { value: new THREE.Matrix3() },
+      craters: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
+      craterDepths: { value: new Float32Array(8) },
+      craterCount: { value: 0 },
+      tiled: { value: 0 },
+      tileRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+      cloudAmount: { value: 1 },
+      cloudOffset: { value: 0 },
+      time: { value: 0 },
+      giant: { value: p.kind === "gas" || p.kind === "ice" ? 1 : 0 },
+      occluders: {
+        value: Array.from({ length: 8 }, () => new THREE.Vector4()),
+      },
+      occluderCount: { value: 0 },
+      sunAngular: { value: 0.00465 },
+      bodyCenter: { value: new THREE.Vector3() },
+      bodyRadius: { value: 1 },
+    };
+    uniforms.albedoScale = {
+      value: p.id === "moon" ? 0.4 : p.id === "mercury" ? 0.65 : 1,
+    };
+    uniforms.craterPatch = { value: 0 };
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: surfaceVertex,
+      fragmentShader: surfaceFragment,
+      uniforms,
+    });
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(
+        1,
+        this.mobile ? 96 : 160,
+        this.mobile ? 64 : 100,
+      ),
+      mat,
+    );
+    spin.add(mesh);
+    mesh.add(scars);
+    mesh.userData.id = p.id;
+    let air: THREE.Mesh | undefined;
+    if (p.atmosphere) {
+      const scaleHeight = p.atmosphere.height / p.radius,
+        shell = 1 + Math.min(0.16, scaleHeight * 14);
+      const beta =
+        p.id === "earth"
+          ? new THREE.Vector3(5.8, 13.5, 33.1).multiplyScalar(1e-6 * p.radius)
+          : new THREE.Vector3(0.35, 0.5, 0.8)
+              .divideScalar(scaleHeight)
+              .multiplyScalar(p.id === "titan" ? 0.18 : 0.06);
+      air = new THREE.Mesh(
+        new THREE.SphereGeometry(shell, 96, 64),
+        new THREE.ShaderMaterial({
+          vertexShader: simpleVertex,
+          fragmentShader: atmosphereFragment,
+          uniforms: {
+            cameraLocal: { value: new THREE.Vector3() },
+            sunDir: uniforms.sunDir,
+            beta: { value: beta },
+            hazeColor: {
+              value:
+                p.id === "titan"
+                  ? new THREE.Vector3(1.8, 1, 0.35)
+                  : p.id === "venus"
+                    ? new THREE.Vector3(1.3, 1, 0.6)
+                    : new THREE.Vector3(1, 1, 1),
+            },
+            shell: { value: shell },
+            scaleHeight: { value: scaleHeight },
+          },
+          transparent: true,
+          side: THREE.BackSide,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          depthTest: false,
+        }),
+      );
+      root.add(air);
+    }
+    let clouds: THREE.Mesh | undefined;
+    if (p.id === "earth") {
+      clouds = new THREE.Mesh(
+        new THREE.SphereGeometry(1.0012, 128, 80),
+        new THREE.ShaderMaterial({
+          vertexShader: simpleVertex,
+          fragmentShader: cloudFragment,
+          uniforms,
+          transparent: true,
+          depthWrite: false,
+        }),
+      );
+      spin.add(clouds);
+    }
+    if (p.id === "saturn" || p.id === "uranus") {
+      const inner = p.id === "saturn" ? 1.23 : 1.8,
+        outer = p.id === "saturn" ? 2.32 : 2.06;
+      const geo = new THREE.RingGeometry(inner, outer, 180, 8),
+        positions = geo.attributes.position,
+        uv = geo.attributes.uv;
+      for (let i = 0; i < positions.count; i++)
+        uv.setXY(
+          i,
+          (Math.hypot(positions.getX(i), positions.getY(i)) - inner) /
+            (outer - inner),
+          0.5,
+        );
+      const rings = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          map: this.texture("saturn-ring.png"),
+          color: p.id === "saturn" ? "#dccdab" : "#6c9d9e",
+          transparent: true,
+          opacity: p.id === "saturn" ? 0.87 : 0.3,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      );
+      rings.rotation.x = -Math.PI / 2;
+      spin.add(rings);
+    }
+    if (p.id === "sun") {
+      const halo = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: this.glow,
+          color: "#ffb86c",
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          opacity: 0.75,
+        }),
+      );
+      halo.scale.setScalar(6);
+      root.add(halo);
+    }
+    const label = document.createElement("button");
+    label.className = "world-label";
+    label.textContent = p.name;
+    label.ariaLabel = `Focus ${p.name}`;
+    label.onclick = () => this.onSelect(p.id);
+    this.labelContainer.append(label);
+    this.worlds.set(p.id, {
+      root,
+      spin,
+      mesh,
+      material: mat,
+      clouds,
+      atmosphere: air,
+      scars,
+      label,
+    });
+    this.worldGroup.add(root);
   }
-  if(p.id==='sun'){
-   const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:this.glow,color:'#ffb86c',blending:THREE.AdditiveBlending,depthWrite:false,opacity:.75}));halo.scale.setScalar(6);root.add(halo);
+  makeStars() {
+    const random = rng(2517),
+      n = this.mobile ? 2600 : 5500,
+      pos = new Float32Array(n * 3),
+      colors = new Float32Array(n * 3),
+      sizes = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const z = random() * 2 - 1,
+        a = random() * Math.PI * 2,
+        r = 1200,
+        rr = Math.sqrt(1 - z * z);
+      pos.set([Math.cos(a) * rr * r, z * r, Math.sin(a) * rr * r], i * 3);
+      const b = 0.25 + random() * 0.6;
+      colors.set(
+        [b * (0.8 + random() * 0.2), b * (0.9 + random() * 0.1), b],
+        i * 3,
+      );
+      sizes[i] = random() > 0.99 ? 2.2 : 0.5 + random();
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    g.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
+    const m = new THREE.ShaderMaterial({
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      vertexShader: `attribute float size;varying vec3 c;void main(){c=color;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);gl_PointSize=size*1.6;}`,
+      fragmentShader: `varying vec3 c;void main(){float d=length(gl_PointCoord-.5);if(d>.5)discard;gl_FragColor=vec4(c,smoothstep(.5,.05,d)*.8);}`,
+    });
+    this.scene.add(new THREE.Points(g, m));
   }
-  const label=document.createElement('button');label.className='world-label';label.textContent=p.name;label.ariaLabel=`Focus ${p.name}`;label.onclick=()=>this.onSelect(p.id);this.labelContainer.append(label);
-  this.worlds.set(p.id,{root,spin,mesh,material:mat,clouds,scars,label});this.worldGroup.add(root);
- }
- makeStars(){
-  const random=rng(2517),n=this.mobile?2600:5500,pos=new Float32Array(n*3),colors=new Float32Array(n*3),sizes=new Float32Array(n);
-  for(let i=0;i<n;i++){const z=random()*2-1,a=random()*Math.PI*2,r=1200,rr=Math.sqrt(1-z*z);pos.set([Math.cos(a)*rr*r,z*r,Math.sin(a)*rr*r],i*3);const b=.25+random()*.6;colors.set([b*(.8+random()*.2),b*(.9+random()*.1),b],i*3);sizes[i]=random()>.99?2.2:.5+random();}
-  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('color',new THREE.BufferAttribute(colors,3));g.setAttribute('size',new THREE.BufferAttribute(sizes,1));
-  const m=new THREE.ShaderMaterial({vertexColors:true,transparent:true,depthWrite:false,vertexShader:`attribute float size;varying vec3 c;void main(){c=color;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);gl_PointSize=size*1.6;}`,fragmentShader:`varying vec3 c;void main(){float d=length(gl_PointCoord-.5);if(d>.5)discard;gl_FragColor=vec4(c,smoothstep(.5,.05,d)*.8);}`});this.scene.add(new THREE.Points(g,m));
- }
- mapPosition(pos:number[],id:string){
-  const v=new THREE.Vector3(pos[0],pos[2],-pos[1]);
-  if(this.trueScale)return v.multiplyScalar(1.15);
-  if(id==='sun')return v.multiplyScalar(3);
-  const idx=PLANETS.findIndex(p=>p.id===id),a=ELEMENTS[id][0][0];return v.multiplyScalar((3.7+idx*2.8)/a);
- }
- makeOrbits(){
-  for(const child of [...this.orbitGroup.children]){this.orbitGroup.remove(child);(child as THREE.Line).geometry.dispose();((child as THREE.Line).material as THREE.Material).dispose();}
-  for(const p of PLANETS.slice(1)){
-   const pts:THREE.Vector3[]=[];for(let i=0;i<=256;i++){const pos=planetPosition(p.id,2451545+p.year*i/256);pts.push(this.mapPosition(pos,p.id));}
-   const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:p.color,transparent:true,opacity:.18}));this.orbitGroup.add(line);
+  mapPosition(pos: number[], id: string) {
+    const v = new THREE.Vector3(pos[0], pos[2], -pos[1]);
+    if (this.trueScale) return v.multiplyScalar(1.15);
+    if (id === "sun") return v.multiplyScalar(3);
+    const idx = PLANETS.findIndex((p) => p.id === id),
+      a = ELEMENTS[id][0][0];
+    return v.multiplyScalar((3.7 + idx * 2.8) / a);
   }
- }
- makeBelt(){
-  const random=rng(21),pos=new Float32Array(1800*3);
-  for(let i=0;i<1800;i++){const a=random()*Math.PI*2,r=15.5+random()*1.5;pos.set([Math.cos(a)*r,(random()-.5)*.25,Math.sin(a)*r],i*3);}
-  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));this.belt.add(new THREE.Points(g,new THREE.PointsMaterial({color:'#a99c87',size:.025,transparent:true,opacity:.3,sizeAttenuation:true})));
- }
- makeTarget(){
-  const group=new THREE.Group();const ring=new THREE.Mesh(new THREE.RingGeometry(.034,.037,48),new THREE.MeshBasicMaterial({color:'#e9ba7d',transparent:true,opacity:.9,side:THREE.DoubleSide,depthTest:false}));group.add(ring);
-  for(let i=0;i<4;i++){const a=i*Math.PI/2,pts=[new THREE.Vector3(Math.cos(a)*.046,Math.sin(a)*.046,0),new THREE.Vector3(Math.cos(a)*.068,Math.sin(a)*.068,0)];group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:'#e9ba7d',depthTest:false})));}group.renderOrder=10;return group;
- }
- resize(){
-  const {width:w,height:h}=this.container.getBoundingClientRect();this.mobile=innerWidth<760;this.renderer.setSize(w,h);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();
- }
- focus(id:string,instant=false){
-  this.clearEvent();this.selected=id;this.view='planet';this.targetLocal=null;this.aiming=false;this.targetMarker.removeFromParent();
-  for(const [key,w] of this.worlds){w.root.visible=key===id;w.root.position.set(0,0,0);w.root.scale.setScalar(1);w.label.hidden=true;}
-  this.orbitGroup.visible=false;this.belt.visible=false;this.controls.target.set(0,0,0);this.controls.minDistance=1.08;this.controls.maxDistance=18;
-  const distance=id==='saturn'?7:4.8;
-  const sun=(this.worlds.get(id)!.material.uniforms.sunDir.value as THREE.Vector3).clone().normalize();
-  this.desiredCamera=sun.applyAxisAngle(new THREE.Vector3(0,1,0),.7).add(new THREE.Vector3(0,.15,0)).normalize().multiplyScalar(distance);
-  if(instant){this.camera.position.copy(this.desiredCamera);this.desiredCamera=null;}
-  this.controls.update();
- }
- system(){
-  this.clearEvent();this.view='system';this.targetMarker.removeFromParent();this.controls.target.set(0,0,0);this.controls.minDistance=3;this.controls.maxDistance=150;this.desiredCamera=new THREE.Vector3(2,35,43);this.orbitGroup.visible=this.showOrbits;this.belt.visible=!this.trueScale;
-  for(const w of this.worlds.values())w.root.visible=true;
- }
- setScale(real:boolean){this.trueScale=real;this.makeOrbits();this.belt.visible=this.view==='system'&&!real;}
- zoom(multiplier:number){this.desiredCamera=null;this.camera.position.sub(this.controls.target).multiplyScalar(multiplier).clampLength(this.controls.minDistance,this.controls.maxDistance).add(this.controls.target);this.controls.update();}
- setQuality(high:boolean){this.renderer.setPixelRatio(Math.min(devicePixelRatio,high?2:1));this.resize();}
- setClouds(show:boolean){const clouds=this.worlds.get('earth')?.clouds;if(clouds)clouds.visible=show;}
- setVenusSurface(show:boolean){this.worlds.get('venus')!.material.uniforms.dayMap.value=this.texture(show?'venus-surface.jpg':'venus.jpg');}
- setEarthHD(show:boolean){this.worlds.get('earth')!.material.uniforms.dayMap.value=this.texture(show?'earth-hd.jpg':'earth.jpg');}
- setTarget(local:THREE.Vector3){
-  this.targetLocal=local.normalize();const w=this.worlds.get(this.selected)!;w.mesh.add(this.targetMarker);this.targetMarker.position.copy(local).multiplyScalar(1.01);this.targetMarker.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),local);
-  const lat=Math.asin(local.y)*180/Math.PI,lon=Math.atan2(local.z,-local.x)*180/Math.PI;this.onTarget(lat,lon);this.aiming=false;
- }
- pick(x:number,y:number){
-  const rect=this.renderer.domElement.getBoundingClientRect();const pointer=new THREE.Vector2((x-rect.left)/rect.width*2-1,-(y-rect.top)/rect.height*2+1);const ray=new THREE.Raycaster();ray.setFromCamera(pointer,this.camera);
-  if(this.view==='system'){
-   const hit=ray.intersectObjects([...this.worlds.values()].map(w=>w.mesh))[0];if(hit)this.onSelect(hit.object.userData.id);
-  }else if(this.aiming){const w=this.worlds.get(this.selected)!;const hit=ray.intersectObject(w.mesh,false)[0];if(hit)this.setTarget(w.mesh.worldToLocal(hit.point.clone()));}
- }
- launch(input:ImpactInput,result:ImpactResult,onHit:()=>void,onFinish:()=>void,recordScar=true){
-  this.clearEvent();const w=this.worlds.get(this.selected)!;
-  if(!this.targetLocal){const direction=this.camera.position.clone().normalize();this.setTarget(w.mesh.worldToLocal(direction));}
-  const normal=this.targetLocal!;const group=new THREE.Group();group.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),normal);w.mesh.add(group);
-  const rockGeo=new THREE.IcosahedronGeometry(1,2),random=rng(67);const pos=rockGeo.attributes.position;for(let i=0;i<pos.count;i++){const f=.8+random()*.4;pos.setXYZ(i,pos.getX(i)*f,pos.getY(i)*f,pos.getZ(i)*f);}rockGeo.computeVertexNormals();
-  const rock=new THREE.Mesh(rockGeo,new THREE.MeshStandardMaterial({color:'#6e6052',roughness:1,emissive:'#fa541c',emissiveIntensity:.5}));rock.scale.setScalar(Math.max(.012,Math.min(.07,Math.sqrt(input.diameter)*.00065)));group.add(rock);
-  const tailGeo=new THREE.BufferGeometry().setFromPoints(Array.from({length:80},()=>new THREE.Vector3()));const trail=new THREE.Line(tailGeo,new THREE.LineBasicMaterial({color:'#f6b05a',transparent:true,opacity:.8}));group.add(trail);
-  const flash=new THREE.Sprite(new THREE.SpriteMaterial({map:this.glow,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));flash.position.set(0,0,1.025);group.add(flash);
-  const ring=new THREE.Mesh(new THREE.RingGeometry(.94,1,160),new THREE.MeshBasicMaterial({color:'#ffd39d',transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false}));group.add(ring);
-  const n=this.mobile?280:800,dustGeo=new THREE.BufferGeometry(),coords=new Float32Array(n*3),velocities=new Float32Array(n*3);
-  for(let i=0;i<n;i++){const a=random()*Math.PI*2,vel=.1+random()*.65;velocities.set([Math.cos(a)*vel,Math.sin(a)*vel,.12+random()*.65],i*3);coords.set([0,0,1.01],i*3);}dustGeo.setAttribute('position',new THREE.BufferAttribute(coords,3));
-  const dust=new THREE.Points(dustGeo,new THREE.PointsMaterial({color:'#ffc18a',size:.012,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending}));group.add(dust);
-  this.entry={group,rock,trail,flash,ring,dust,velocities,result,input,t:0,done:false,recordScar,onHit,onFinish};
-  // Ensure the selected surface point is visible before the event.
-  const targetWorld=w.mesh.localToWorld(normal.clone()).normalize();this.desiredCamera=targetWorld.clone().multiplyScalar(this.selected==='saturn'?6.5:4.5).add(new THREE.Vector3(0,.3,0));
- }
- private scar(event:NonNullable<Observatory['entry']>){
-  const {result,input}=event;if(result.outcome==='airburst'||result.outcome==='meteorites')return;
-  const planet=PLANETS.find(p=>p.id===this.selected)!,size=result.outcome==='crater'?result.craterDiameter/planet.radius*.5:Math.sqrt(input.diameter)*.001;
-  const radius=Math.min(.35,Math.max(.016,size));
-  const geo=new THREE.PlaneGeometry(radius*2,radius*2,20,20),pos=geo.attributes.position;
-  for(let i=0;i<pos.count;i++){const x=pos.getX(i),y=pos.getY(i);pos.setZ(i,Math.sqrt(Math.max(.01,1-x*x-y*y))+ .002);}
-  const decal=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:result.outcome==='crater'?this.crater:this.gasScar,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2}));decal.quaternion.copy(event.group.quaternion);this.worlds.get(this.selected)!.scars.add(decal);
-  const scars=this.worlds.get(this.selected)!.scars;if(scars.children.length>16){const first=scars.children[0] as THREE.Mesh;scars.remove(first);first.geometry.dispose();(first.material as THREE.Material).dispose();}
- }
- clearScars(){for(const w of this.worlds.values())for(const obj of [...w.scars.children]){w.scars.remove(obj);(obj as THREE.Mesh).geometry.dispose();((obj as THREE.Mesh).material as THREE.Material).dispose();}}
- clearEvent(){if(this.entry){this.entry.group.removeFromParent();this.entry.group.traverse(obj=>{const mesh=obj as THREE.Mesh;if(mesh.geometry)mesh.geometry.dispose();if(mesh.material){const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];mats.forEach(m=>m.dispose());}});this.entry=null;}}
- private updateEvent(dt:number){
-  const e=this.entry;if(!e||e.done)return;e.t+=dt;
-  const travel=3.3,elapsed=e.t-travel;
-  if(elapsed<0){
-   const f=1-e.t/travel,angle=e.input.angle*Math.PI/180,dis=3.5*f*f;
-   const loc=(d:number)=>new THREE.Vector3(-d*Math.cos(angle),d*.15,1.01+d*Math.sin(angle));
-   e.rock.position.copy(loc(dis));e.rock.rotation.x+=dt*2;e.rock.rotation.y+=dt;
-   const attr=e.trail.geometry.attributes.position;for(let i=0;i<attr.count;i++){const v=loc(dis+i/attr.count*.75);attr.setXYZ(i,v.x,v.y,v.z);}attr.needsUpdate=true;
-   e.flash.position.copy(e.rock.position);e.flash.scale.setScalar(.18);e.flash.material.opacity=.55;
-  }else{
-   if(e.rock.visible){e.rock.visible=false;e.trail.visible=false;if(e.recordScar)this.scar(e);e.onHit();}
-   const airborne=e.result.outcome==='airburst';const z=airborne?1.01+Math.max(.025,e.result.burstAltitude/PLANETS.find(p=>p.id===this.selected)!.radius):1.015;
-   e.flash.position.set(0,0,z);const strength=Math.min(2.5,.35+Math.log10(e.result.entryEnergy/1e10+1)*.22);
-   e.flash.scale.setScalar((.1+elapsed*1.4)*strength);e.flash.material.opacity=this.reduced?.2:Math.max(0,.95-elapsed*.35);
-   const radius=Math.min(.94,.02+Math.sqrt(elapsed)*.34*strength);e.ring.scale.setScalar(radius);e.ring.position.set(0,0,Math.sqrt(1-radius*radius)+.009);(e.ring.material as THREE.MeshBasicMaterial).opacity=Math.max(0,.75-elapsed*.15);
-   const attr=e.dust.geometry.attributes.position;for(let i=0;i<attr.count;i++){const v=e.velocities;attr.setXYZ(i,v[i*3]*elapsed*.6,v[i*3+1]*elapsed*.6,z+v[i*3+2]*elapsed*.5-elapsed*elapsed*.065);}attr.needsUpdate=true;(e.dust.material as THREE.PointsMaterial).opacity=Math.max(0,1-elapsed*.22);
-   if(elapsed>5){e.done=true;e.onFinish();e.flash.material.opacity=0;(e.ring.material as THREE.MeshBasicMaterial).opacity=0;(e.dust.material as THREE.PointsMaterial).opacity=0;}
+  makeOrbits() {
+    for (const child of [...this.orbitGroup.children]) {
+      this.orbitGroup.remove(child);
+      (child as THREE.Line).geometry.dispose();
+      ((child as THREE.Line).material as THREE.Material).dispose();
+    }
+    for (const p of PLANETS.slice(1)) {
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= 256; i++) {
+        const pos = planetPosition(p.id, 2451545 + (p.year * i) / 256);
+        pts.push(this.mapPosition(pos, p.id));
+      }
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({
+          color: p.color,
+          transparent: true,
+          opacity: 0.18,
+        }),
+      );
+      this.orbitGroup.add(line);
+    }
   }
- }
- update(sim:SolarSystem,dt:number,now:number){
-  this.selectedJD=sim.jd;const sun=sim.bodies[0].position;
-  for(const p of PLANETS){const w=this.worlds.get(p.id)!;const b=sim.bodies.find(b=>b.id===p.id)!;
-   if(!this.entry||this.entry.done){w.spin.rotation.set(0,0,p.tilt*Math.PI/180);w.mesh.rotation.y=((sim.jd-2451545)*24/p.rotation*Math.PI*2)%(Math.PI*2);if(w.clouds)w.clouds.rotation.y=w.mesh.rotation.y;}
-   if(this.view==='system'){
-    w.root.position.copy(this.mapPosition(b.position.map((v,i)=>v-sun[i]),p.id));const s=p.id==='sun'?.95:.12+Math.pow(p.radius/6371000,.52)*.14;w.root.scale.setScalar(s);
-    (w.material.uniforms.sunDir.value as THREE.Vector3).copy(w.root.position).negate();
-    w.label.hidden=!this.showLabels;const projected=w.root.position.clone().project(this.camera);const rect=this.container.getBoundingClientRect();
-    w.label.style.transform=`translate(${(projected.x*.5+.5)*rect.width}px,${(-projected.y*.5+.5)*rect.height+12}px)`;w.label.style.display=projected.z>1?'none':'';
-   }else{
-    // Sunward direction in the same ecliptic world frame as the orbit model.
-    (w.material.uniforms.sunDir.value as THREE.Vector3).set(sun[0]-b.position[0],sun[2]-b.position[2],b.position[1]-sun[1]).normalize();
-   }
+  makeBelt() {
+    const random = rng(21),
+      pos = new Float32Array(1800 * 3);
+    for (let i = 0; i < 1800; i++) {
+      const a = random() * Math.PI * 2,
+        r = 15.5 + random() * 1.5;
+      pos.set(
+        [Math.cos(a) * r, (random() - 0.5) * 0.25, Math.sin(a) * r],
+        i * 3,
+      );
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    this.belt.add(
+      new THREE.Points(
+        g,
+        new THREE.PointsMaterial({
+          color: "#a99c87",
+          size: 0.025,
+          transparent: true,
+          opacity: 0.3,
+          sizeAttenuation: true,
+        }),
+      ),
+    );
   }
-  if(this.desiredCamera){this.camera.position.lerp(this.desiredCamera,1-Math.exp(-dt*4));if(this.camera.position.distanceTo(this.desiredCamera)<.01)this.desiredCamera=null;}
-  this.controls.update();this.updateEvent(dt);this.renderer.render(this.scene,this.camera);
-  this.frameCounter++;if(now-this.fpsTime>1000){this.onFrame(Math.round(this.frameCounter*1000/(now-this.fpsTime)));this.frameCounter=0;this.fpsTime=now;}
- }
- screenshot(){const a=document.createElement('a');a.download=`asterion-${this.selected}.png`;a.href=this.renderer.domElement.toDataURL('image/png');a.click();}
+  makeTarget() {
+    const group = new THREE.Group();
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.034, 0.037, 48),
+      new THREE.MeshBasicMaterial({
+        color: "#e9ba7d",
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide,
+        depthTest: false,
+      }),
+    );
+    group.add(ring);
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2,
+        pts = [
+          new THREE.Vector3(Math.cos(a) * 0.046, Math.sin(a) * 0.046, 0),
+          new THREE.Vector3(Math.cos(a) * 0.068, Math.sin(a) * 0.068, 0),
+        ];
+      group.add(
+        new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(pts),
+          new THREE.LineBasicMaterial({ color: "#e9ba7d", depthTest: false }),
+        ),
+      );
+    }
+    group.renderOrder = 10;
+    return group;
+  }
+  resize() {
+    const { width: w, height: h } = this.container.getBoundingClientRect();
+    this.mobile = innerWidth < 760;
+    this.renderer.setSize(w, h);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+  focus(id: string, instant = false) {
+    this.clearEvent();
+    this.eclipseDemo = false;
+    this.moonGuides.visible = false;
+    this.disposeDetail();
+    this.selected = id;
+    this.view = "planet";
+    this.targetLocal = null;
+    this.aiming = false;
+    this.targetMarker.removeFromParent();
+    for (const [key, w] of this.worlds) {
+      w.root.visible = key === id;
+      w.root.position.set(0, 0, 0);
+      w.root.scale.setScalar(1);
+      w.label.hidden = true;
+    }
+    this.orbitGroup.visible = false;
+    this.belt.visible = false;
+    this.controls.target.set(0, 0, 0);
+    this.controls.minDistance = 1.003;
+    this.controls.maxDistance = 180;
+    this.loadEphemerides(parentOf(id));
+    const distance = id === "saturn" ? 7 : 4.8;
+    if (this.lastSimulation) {
+      const sim = this.lastSimulation,
+        b = sim.bodies.find((b) => b.id === parentOf(id))!,
+        s = sim.bodies[0].position;
+      this.worlds
+        .get(id)!
+        .material.uniforms.sunDir.value.set(
+          s[0] - b.position[0],
+          s[2] - b.position[2],
+          b.position[1] - s[1],
+        )
+        .normalize();
+    }
+    const sun = (
+      this.worlds.get(id)!.material.uniforms.sunDir.value as THREE.Vector3
+    )
+      .clone()
+      .normalize();
+    this.desiredCamera = sun
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), 0.7)
+      .add(new THREE.Vector3(0, 0.15, 0))
+      .normalize()
+      .multiplyScalar(distance);
+    if (instant) {
+      this.camera.position.copy(this.desiredCamera);
+      this.desiredCamera = null;
+    }
+    this.controls.update();
+    this.prepareDetail();
+  }
+  system() {
+    this.clearEvent();
+    this.eclipseDemo = false;
+    this.moonGuides.visible = false;
+    this.disposeDetail();
+    this.view = "system";
+    this.targetMarker.removeFromParent();
+    this.controls.target.set(0, 0, 0);
+    this.controls.minDistance = 3;
+    this.controls.maxDistance = 150;
+    this.desiredCamera = new THREE.Vector3(2, 35, 43);
+    this.orbitGroup.visible = this.showOrbits;
+    this.belt.visible = !this.trueScale;
+    for (const [id, w] of this.worlds)
+      w.root.visible = PLANETS.some((p) => p.id === id);
+  }
+  setScale(real: boolean) {
+    this.trueScale = real;
+    this.makeOrbits();
+    this.belt.visible = this.view === "system" && !real;
+  }
+  zoom(multiplier: number) {
+    this.desiredCamera = null;
+    this.camera.position
+      .sub(this.controls.target)
+      .multiplyScalar(multiplier)
+      .clampLength(this.controls.minDistance, this.controls.maxDistance)
+      .add(this.controls.target);
+    this.controls.update();
+  }
+  setQuality(high: boolean) {
+    this.highQuality = high;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, high ? 2 : 1));
+    this.resize();
+  }
+  setClouds(show: boolean) {
+    const clouds = this.worlds.get("earth")?.clouds;
+    if (clouds) clouds.visible = show;
+    this.worlds.get("earth")!.material.uniforms.cloudAmount.value = show
+      ? 1
+      : 0;
+  }
+  setVenusSurface(show: boolean) {
+    this.venusSurface = show;
+    this.worlds.get("venus")!.material.uniforms.dayMap.value = this.texture(
+      show ? "venus-surface.jpg" : "venus.jpg",
+    );
+    this.disposeDetail();
+    this.prepareDetail();
+  }
+  setEarthHD(show: boolean) {
+    this.autoDetail = show;
+    this.disposeDetail();
+    this.prepareDetail();
+  }
+  setTarget(local: THREE.Vector3) {
+    this.targetLocal = local.normalize();
+    const w = this.worlds.get(this.selected)!;
+    w.mesh.add(this.targetMarker);
+    this.targetMarker.position.copy(local).multiplyScalar(1.01);
+    this.targetMarker.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      local,
+    );
+    const lat = (Math.asin(local.y) * 180) / Math.PI,
+      lon = (Math.atan2(local.z, -local.x) * 180) / Math.PI;
+    this.onTarget(lat, lon);
+    this.aiming = false;
+  }
+  pick(x: number, y: number) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((x - rect.left) / rect.width) * 2 - 1,
+      (-(y - rect.top) / rect.height) * 2 + 1,
+    );
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(pointer, this.camera);
+    if (this.view !== "planet") {
+      const hit = ray.intersectObjects(
+        [...this.worlds.values()]
+          .filter((w) => w.root.visible)
+          .map((w) => w.mesh),
+      )[0];
+      if (hit) this.onSelect(hit.object.userData.id);
+    } else if (this.aiming) {
+      const w = this.worlds.get(this.selected)!;
+      const hit = ray.intersectObject(w.mesh, false)[0];
+      if (hit) this.setTarget(w.mesh.worldToLocal(hit.point.clone()));
+    }
+  }
+  launch(
+    input: ImpactInput,
+    result: ImpactResult,
+    onHit: () => void,
+    onFinish: () => void,
+    recordScar = true,
+  ) {
+    this.clearEvent();
+    const world = this.worlds.get(this.selected)!;
+    if (!this.targetLocal) {
+      world.mesh.updateWorldMatrix(true, false);
+      this.setTarget(
+        world.mesh.worldToLocal(this.camera.position.clone()).normalize(),
+      );
+    }
+    this.entry = new ImpactSequence(
+      BODIES.find((p) => p.id === this.selected)!,
+      input,
+      result,
+      this.targetLocal!,
+      this.glow,
+      this.mobile,
+      () => {
+        if (recordScar) this.addCrater(result);
+        if (this.followAsteroid) this.impactCamera("site");
+        onHit();
+      },
+      onFinish,
+    );
+    this.entry.onProgress = (value) => this.onPlayback(value);
+    world.mesh.add(this.entry.group);
+    this.targetMarker.removeFromParent();
+    this.impactCamera("approach");
+  }
+  impactCamera(mode: "approach" | "site" | "planet" | "debris") {
+    if (!this.entry || !this.targetLocal) return;
+    this.followAsteroid = mode === "approach" && this.entry.time < 3.5;
+    this.camera.near = this.followAsteroid
+      ? Math.max(1e-8, this.entry.incomingRadius * 0.03)
+      : 0.00002;
+    this.camera.updateProjectionMatrix();
+    if (this.followAsteroid) {
+      this.desiredCamera = null;
+      this.controls.minDistance = this.entry.incomingRadius * 2;
+      return;
+    }
+    const w = this.worlds.get(this.selected)!,
+      p = BODIES.find((p) => p.id === this.selected)!;
+    w.mesh.updateWorldMatrix(true, false);
+    const normal = w.mesh.localToWorld(this.targetLocal.clone()).normalize();
+    if (mode === "planet") {
+      this.controls.target.set(0, 0, 0);
+      this.controls.minDistance = 1.003;
+      this.desiredCamera = normal.clone().multiplyScalar(3.7);
+      return;
+    }
+    if (mode === "debris") {
+      this.controls.target.set(0, 0, 0);
+      this.controls.minDistance = 1.003;
+      this.desiredCamera = normal
+        .clone()
+        .multiplyScalar(6)
+        .add(new THREE.Vector3(0, 2, 0));
+      this.entry.showPaths(true);
+      return;
+    }
+    const crater = this.entry.result.craterDiameter / (2 * p.radius),
+      height = Math.max(0.004, Math.min(0.6, crater * 5));
+    const tangent = new THREE.Vector3(0, 1, 0).cross(normal).normalize();
+    this.controls.target.copy(normal);
+    this.controls.minDistance = Math.max(0.003, height * 0.3);
+    this.controls.maxDistance = 180;
+    this.desiredCamera = normal
+      .clone()
+      .multiplyScalar(1 + height * 0.85)
+      .addScaledVector(tangent, height * 1.7)
+      .add(new THREE.Vector3(0, height * 0.5, 0));
+  }
+  private addCrater(result: ImpactResult) {
+    if (result.outcome !== "crater" || !this.targetLocal) return;
+    const p = BODIES.find((p) => p.id === this.selected)!,
+      w = this.worlds.get(p.id)!,
+      u = w.material.uniforms;
+    const count = u.craterCount.value as number,
+      index = (w.mesh.userData.craterCursor ?? 0) % 8;
+    w.mesh.userData.craterCursor = index + 1;
+    u.craters.value[index].set(
+      this.targetLocal.x,
+      this.targetLocal.y,
+      this.targetLocal.z,
+      Math.min(0.35, result.craterDiameter / (2 * p.radius)),
+    );
+    u.craterDepths.value[index] = Math.min(0.05, result.craterDepth / p.radius);
+    u.craterCount.value = Math.min(8, count + 1);
+    for (const old of [...w.scars.children])
+      if (old.userData.craterIndex === index) {
+        old.removeFromParent();
+        (old as THREE.Mesh).geometry.dispose();
+        ((old as THREE.Mesh).material as THREE.Material).dispose();
+      }
+    // A dense local patch resolves even a small crater; the parent surface is cut
+    // out in the fragment shader so its coarse triangles cannot fill the bowl.
+    const radius = u.craters.value[index].w,
+      extent = Math.min(0.85, radius * 1.75),
+      segments = this.mobile ? 64 : 128;
+    const geo = new THREE.PlaneGeometry(
+        extent * 2,
+        extent * 2,
+        segments,
+        segments,
+      ),
+      pos = geo.attributes.position,
+      uv = geo.attributes.uv;
+    const rotation = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        this.targetLocal,
+      ),
+      n = new THREE.Vector3();
+    const centerU =
+      (Math.atan2(this.targetLocal.z, -this.targetLocal.x) / (Math.PI * 2) +
+        1) %
+      1;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i),
+        y = pos.getY(i);
+      n.set(x, y, Math.sqrt(Math.max(0.01, 1 - x * x - y * y)))
+        .normalize()
+        .applyQuaternion(rotation);
+      pos.setXYZ(i, n.x, n.y, n.z);
+      let longitude = (Math.atan2(n.z, -n.x) / (Math.PI * 2) + 1) % 1;
+      if (longitude - centerU > 0.5) longitude -= 1;
+      if (longitude - centerU < -0.5) longitude += 1;
+      uv.setXY(i, longitude, Math.acos(-n.y) / Math.PI);
+    }
+    geo.computeVertexNormals();
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: surfaceVertex,
+      fragmentShader: surfaceFragment,
+      uniforms: { ...u, craterPatch: { value: 1 } },
+      polygonOffset: true,
+      polygonOffsetFactor: -8,
+      polygonOffsetUnits: -8,
+    });
+    const patch = new THREE.Mesh(geo, mat);
+    patch.userData.craterIndex = index;
+    w.scars.add(patch);
+  }
+  clearScars() {
+    for (const w of this.worlds.values()) {
+      w.material.uniforms.craterCount.value = 0;
+      w.mesh.userData.craterCursor = 0;
+      for (const obj of [...w.scars.children]) {
+        obj.removeFromParent();
+        (obj as THREE.Mesh).geometry.dispose();
+        ((obj as THREE.Mesh).material as THREE.Material).dispose();
+      }
+    }
+  }
+  clearEvent() {
+    this.followAsteroid = false;
+    this.camera.near = 0.005;
+    this.camera.updateProjectionMatrix();
+    if (this.entry) {
+      this.entry.dispose();
+      this.entry = null;
+    }
+  }
+  setTerrain(show: boolean) {
+    this.terrainEnabled = show;
+    for (const w of this.worlds.values())
+      w.material.uniforms.terrain.value = show ? 1 : 0;
+  }
+  private disposeDetail() {
+    for (const w of this.worlds.values()) {
+      w.stream?.dispose();
+      w.stream = undefined;
+      w.material.colorWrite = true;
+      w.material.depthWrite = true;
+    }
+  }
+  private loadingEphemerides = new Set<string>();
+  private loadEphemerides(parent: string) {
+    for (const moon of MOONS.filter((m) => m.parent === parent)) {
+      if (ephemerides.has(moon.id) || this.loadingEphemerides.has(moon.id))
+        continue;
+      this.loadingEphemerides.add(moon.id);
+      void fetch(`/ephemerides/${moon.id}.json`)
+        .then((r) => {
+          if (!r.ok) throw new Error("Ephemeris unavailable");
+          return r.json();
+        })
+        .then((data) => {
+          ephemerides.set(moon.id, data);
+          if (this.view === "moons" && this.moonParent === parent)
+            this.refreshMoonGuides();
+        })
+        .catch(() => {})
+        .finally(() => this.loadingEphemerides.delete(moon.id));
+    }
+  }
+  private prepareDetail() {
+    if (this.view !== "planet") return;
+    const w = this.worlds.get(this.selected)!,
+      p = BODIES.find((p) => p.id === this.selected)!;
+    const datasetId =
+        this.selected === "venus" && this.venusSurface
+          ? "venus-surface"
+          : this.selected,
+      dataset = this.datasets[datasetId];
+    if (
+      dataset &&
+      (dataset.maxLevel ?? 0) > 0 &&
+      this.autoDetail &&
+      !w.stream
+    ) {
+      w.stream = new TerrainStream(
+        datasetId,
+        dataset,
+        w.material.uniforms,
+        this.mobile ? 40 : 80,
+      );
+      w.mesh.add(w.stream.group);
+    }
+    const height = this.datasets[this.selected + "-height"];
+    if (height) {
+      w.material.uniforms.heightMap.value = this.texture(
+        this.selected + "-height.png",
+      );
+      w.material.uniforms.heightRange.value.set(
+        height.min! / p.radius,
+        (height.max! - height.min!) / p.radius,
+      );
+      w.material.uniforms.reliefEnabled.value = 1;
+      if (!this.entry)
+        this.controls.minDistance = 1 + height.max! / p.radius + 0.001;
+    }
+  }
+  private refreshMoonGuides() {
+    this.guideJD = this.selectedJD;
+    for (const obj of [...this.moonGuides.children]) {
+      obj.removeFromParent();
+      (obj as THREE.Line).geometry.dispose();
+      ((obj as THREE.Line).material as THREE.Material).dispose();
+    }
+    const parent = PLANETS.find((p) => p.id === this.moonParent)!;
+    for (const m of MOONS.filter((m) => m.parent === this.moonParent)) {
+      const table = ephemerides.get(m.id);
+      let start = this.selectedJD;
+      if (table && hasEphemeris(m.id, start))
+        start = Math.max(
+          table.start - 69.184 / 86400,
+          Math.min(
+            start,
+            table.start +
+              table.step * (table.states.length - 1) -
+              m.year -
+              69.184 / 86400,
+          ),
+        );
+      const points = Array.from({ length: 257 }, (_, i) =>
+        new THREE.Vector3(
+          ...satellitePosition(m, start + (m.year * i) / 256),
+        ).divideScalar(parent.radius),
+      );
+      this.moonGuides.add(
+        new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(points),
+          new THREE.LineBasicMaterial({
+            color: m.color,
+            transparent: true,
+            opacity: 0.3,
+          }),
+        ),
+      );
+    }
+  }
+  satellites(parent: string) {
+    this.focus(parent);
+    this.view = "moons";
+    this.moonParent = parent;
+    this.disposeDetail();
+    this.moonGuides.visible = true;
+    this.refreshMoonGuides();
+    const p = PLANETS.find((p) => p.id === parent)!,
+      moons = MOONS.filter((m) => m.parent === parent);
+    for (const m of moons) this.worlds.get(m.id)!.root.visible = true;
+    const reach = Math.max(...moons.map((m) => m.orbit.a / p.radius));
+    this.controls.minDistance = 1.05;
+    this.controls.maxDistance = reach * 5;
+    this.controls.target.set(0, 0, 0);
+    this.desiredCamera = new THREE.Vector3(0.1, 0.65, 1)
+      .normalize()
+      .multiplyScalar(reach * 3.4);
+  }
+  demonstrateEclipse() {
+    this.focus("jupiter");
+    this.eclipseDemo = true;
+    const sun = this.worlds.get("jupiter")!.material.uniforms.sunDir
+      .value as THREE.Vector3;
+    this.desiredCamera = sun
+      .clone()
+      .normalize()
+      .multiplyScalar(3.4)
+      .add(new THREE.Vector3(0, 0.3, 0));
+  }
+  setSystemCamera(mode: "oblique" | "top" | "edge" | "inner") {
+    this.controls.target.set(0, 0, 0);
+    this.desiredCamera =
+      mode === "top"
+        ? new THREE.Vector3(0, 75, 0.01)
+        : mode === "edge"
+          ? new THREE.Vector3(0, 1.2, 65)
+          : mode === "inner"
+            ? new THREE.Vector3(
+                0,
+                this.trueScale ? 3.5 : 15,
+                this.trueScale ? 5 : 20,
+              )
+            : new THREE.Vector3(2, 35, 43);
+  }
+  update(sim: SolarSystem, dt: number, now: number) {
+    this.lastSimulation = sim;
+    this.selectedJD = sim.jd;
+    const sun = sim.bodies[0].position;
+    const selectedParent = parentOf(this.selected),
+      parent = PLANETS.find((p) => p.id === selectedParent)!;
+    const parentBody = sim.bodies.find((b) => b.id === selectedParent)!;
+    const sunlight = new THREE.Vector3(
+      sun[0] - parentBody.position[0],
+      sun[2] - parentBody.position[2],
+      parentBody.position[1] - sun[1],
+    ).normalize();
+    this.sunlight.position.copy(sunlight).multiplyScalar(30);
+    for (const p of BODIES) {
+      const w = this.worlds.get(p.id)!,
+        u = w.material.uniforms;
+      if (!this.entry) {
+        w.spin.rotation.set(0, 0, (p.tilt * Math.PI) / 180);
+        w.mesh.rotation.y =
+          ((((sim.jd - 2451545) * 24) / p.rotation) * Math.PI * 2) %
+          (Math.PI * 2);
+        if (w.clouds) w.clouds.rotation.y = w.mesh.rotation.y;
+      }
+      u.time.value = now / 1000;
+      u.cloudOffset.value = Math.sin((sim.jd - 2451545) * 0.025) * 0.003;
+      u.occluderCount.value = 0;
+      if (this.view === "system") {
+        const b = sim.bodies.find((b) => b.id === p.id);
+        if (!b) {
+          w.root.visible = false;
+          w.label.hidden = true;
+          continue;
+        }
+        w.root.position.copy(
+          this.mapPosition(
+            b.position.map((v, i) => v - sun[i]),
+            p.id,
+          ),
+        );
+        const scale =
+          p.id === "sun"
+            ? 0.95
+            : 0.12 + Math.pow(p.radius / 6371000, 0.52) * 0.14;
+        w.root.scale.setScalar(scale);
+        (u.sunDir.value as THREE.Vector3).copy(w.root.position).negate();
+      } else {
+        (u.sunDir.value as THREE.Vector3).copy(sunlight);
+        if (this.view === "moons") {
+          const moon = MOONS.find((m) => m.id === p.id);
+          w.root.visible =
+            p.id === this.moonParent || moon?.parent === this.moonParent;
+          if (moon && moon.parent === this.moonParent) {
+            w.root.position
+              .set(...satellitePosition(moon, sim.jd))
+              .divideScalar(parent.radius);
+            w.root.scale.setScalar(moon.radius / parent.radius);
+          }
+        }
+        u.sunAngular.value =
+          0.00465047 /
+          Math.hypot(...parentBody.position.map((v, i) => v - sun[i]));
+        const moon = MOONS.find((m) => m.id === this.selected);
+        if (this.view === "planet" && p.id === this.selected) {
+          if (moon) {
+            const pos = new THREE.Vector3(...satellitePosition(moon, sim.jd))
+              .negate()
+              .divideScalar(moon.radius);
+            u.occluders.value[0].set(
+              pos.x,
+              pos.y,
+              pos.z,
+              parent.radius / moon.radius,
+            );
+            u.occluderCount.value = 1;
+          } else {
+            const moons = MOONS.filter((m) => m.parent === p.id);
+            moons.forEach((m, i) => {
+              const pos = new THREE.Vector3(
+                ...satellitePosition(m, sim.jd),
+              ).divideScalar(p.radius);
+              if (this.eclipseDemo && i === 0)
+                pos.copy(sunlight).multiplyScalar(m.orbit.a / p.radius);
+              u.occluders.value[i].set(
+                pos.x,
+                pos.y,
+                pos.z,
+                m.radius / p.radius,
+              );
+            });
+            u.occluderCount.value = moons.length;
+          }
+        }
+      }
+      w.root.updateWorldMatrix(true, true);
+      u.objectNormalMatrix.value.setFromMatrix4(w.mesh.matrixWorld);
+      u.bodyCenter.value.copy(w.root.position);
+      u.bodyRadius.value = w.root.scale.x;
+      if (w.atmosphere) {
+        const a = w.atmosphere.material as THREE.ShaderMaterial;
+        a.uniforms.cameraLocal.value
+          .copy(this.camera.position)
+          .sub(w.root.position)
+          .divideScalar(w.root.scale.x);
+      }
+      w.label.hidden =
+        this.view === "planet" || !this.showLabels || !w.root.visible;
+      if (!w.label.hidden) {
+        const projected = w.root.position.clone().project(this.camera);
+        const rect = this.container.getBoundingClientRect();
+        w.label.style.transform = `translate(${(projected.x * 0.5 + 0.5) * rect.width}px,${(-projected.y * 0.5 + 0.5) * rect.height + 12}px)`;
+        w.label.style.display = projected.z > 1 ? "none" : "";
+      }
+    }
+    if (this.view === "moons") {
+      if (
+        now - this.guideTick > 2000 &&
+        Math.abs(sim.jd - this.guideJD) > 0.5
+      ) {
+        this.guideTick = now;
+        this.refreshMoonGuides();
+      }
+      const visible = [...this.worlds.values()].filter((w) => w.root.visible);
+      for (const w of visible) {
+        let i = 0;
+        for (const other of visible) {
+          if (other === w) continue;
+          w.material.uniforms.occluders.value[i++].set(
+            other.root.position.x,
+            other.root.position.y,
+            other.root.position.z,
+            other.root.scale.x,
+          );
+        }
+        w.material.uniforms.occluderCount.value = i;
+      }
+    }
+    if (this.desiredCamera) {
+      this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-dt * 4));
+      if (this.camera.position.distanceTo(this.desiredCamera) < 0.0001)
+        this.desiredCamera = null;
+    }
+    this.controls.update();
+    const credits = document.getElementById("ephemeris-credit");
+    if (credits) {
+      const family = MOONS.filter((m) => m.parent === parentOf(this.selected));
+      credits.textContent =
+        family.length && family.every((m) => hasEphemeris(m.id, sim.jd))
+          ? "Moon positions: JPL Horizons vectors (2026–2027)"
+          : "Moon positions: approximate reference orbits";
+    }
+    if (this.view === "planet" && now - this.detailTick > 150) {
+      this.detailTick = now;
+      const w = this.worlds.get(this.selected)!;
+      this.localCamera.copy(this.camera.position);
+      w.mesh.worldToLocal(this.localCamera);
+      const pixels =
+        (this.container.clientHeight * this.renderer.getPixelRatio()) /
+        (2 * Math.tan((this.camera.fov * Math.PI) / 360));
+      if (w.stream) {
+        const ready = w.stream.update(
+          this.localCamera,
+          pixels,
+          this.highQuality,
+        );
+        w.material.colorWrite = !ready;
+        w.material.depthWrite = !ready;
+      }
+      const altitude = Math.max(
+        0,
+        ((this.localCamera.length() - 1) *
+          BODIES.find((p) => p.id === this.selected)!.radius) /
+          1000,
+      );
+      const dataset = this.datasets[this.selected],
+        detail = w.stream
+          ? `${Math.round((1024 * 2 ** w.stream.activeLevel) / 1024)}K detail${w.stream.pending ? " · refining" : ""}`
+          : "Base map";
+      this.onDetail(
+        `${altitude.toLocaleString(undefined, { maximumFractionDigits: 0 })} km altitude · ${detail}${dataset && dataset.maxLevel === w.stream?.activeLevel ? " · source limit" : ""}`,
+      );
+    }
+    this.entry?.update(dt);
+    if (this.followAsteroid && this.entry && this.entry.time >= 3.5)
+      this.impactCamera("site");
+    if (this.followAsteroid && this.entry) {
+      const position = this.entry.incomingPosition();
+      const outward = position.clone().normalize();
+      const tangent = new THREE.Vector3(0, 1, 0).cross(outward).normalize();
+      this.controls.target.copy(position);
+      this.camera.position
+        .copy(position)
+        .addScaledVector(outward, this.entry.incomingRadius * 7)
+        .addScaledVector(tangent, this.entry.incomingRadius * 3);
+      this.controls.update();
+    }
+    this.renderer.render(this.scene, this.camera);
+    if (this.assetsReady && this.readyCallback && !this.desiredCamera) {
+      this.readyCallback();
+      this.readyCallback = undefined;
+    }
+    this.frameCounter++;
+    if (now - this.fpsTime > 2000) {
+      const fps = Math.round((this.frameCounter * 1000) / (now - this.fpsTime));
+      this.onFrame(fps);
+      if (this.highQuality) {
+        const ratio = this.renderer.getPixelRatio(),
+          ceiling = Math.min(devicePixelRatio, this.mobile ? 1.8 : 2);
+        if (fps < 28 && ratio > 0.8) {
+          this.renderer.setPixelRatio(Math.max(0.8, ratio - 0.2));
+          this.resize();
+        } else if (fps > 52 && ratio < ceiling) {
+          this.renderer.setPixelRatio(Math.min(ceiling, ratio + 0.1));
+          this.resize();
+        }
+      }
+      this.frameCounter = 0;
+      this.fpsTime = now;
+    }
+  }
+  screenshot() {
+    const a = document.createElement("a");
+    a.download = `asterion-${this.selected}.png`;
+    a.href = this.renderer.domElement.toDataURL("image/png");
+    a.click();
+  }
 }

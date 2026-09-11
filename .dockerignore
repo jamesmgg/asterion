@@ -1,5 +1,7 @@
 node_modules
+.asset-cache
 dist
 .git
 test-results
 playwright-report
+docs

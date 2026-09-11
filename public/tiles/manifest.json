@@ -1,0 +1,143 @@
+{
+  "earth": {
+    "maxLevel": 4,
+    "sourceWidth": 21600,
+    "width": 16384,
+    "height": 8192,
+    "url": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bmng-base/june/world.200406.3x21600x10800.jpg",
+    "sha256": "282608580a290723655bfbe917e69ea2f93f4da068dfa96ff4a152b1c6ec36be"
+  },
+  "moon": {
+    "maxLevel": 4,
+    "sourceWidth": 16384,
+    "width": 16384,
+    "height": 8192,
+    "url": "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_poles_16k.tif",
+    "sha256": "dbff4356479764d89f9fd7722140043eddbc2cafbad4dec5950858e2df77ac54"
+  },
+  "moon-height": {
+    "min": -8901.0224609375,
+    "max": 10546.6572265625,
+    "width": 4096,
+    "url": "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_16_uint.tif",
+    "sha256": "45a2b32d56e81ed30db07fead8abc842b249b6511219d9ca2c53f81bc2dc5d62"
+  },
+  "mars": {
+    "maxLevel": 3,
+    "sourceWidth": 8192,
+    "width": 8192,
+    "height": 4096,
+    "url": "https://www.solarsystemscope.com/textures/download/8k_mars.jpg",
+    "sha256": "4cc52149924abc6ae507d63032f994e1d42a55cb82c09e002d1a567ff66c23ee"
+  },
+  "jupiter": {
+    "maxLevel": 2,
+    "sourceWidth": 4096,
+    "width": 4096,
+    "height": 2048,
+    "url": "https://www.solarsystemscope.com/textures/download/8k_jupiter.jpg",
+    "sha256": "0bd844bf20822c4e3e80882b077859833c0dac44c7e4e1e0cd63d1b1b6d43085"
+  },
+  "mercury": {
+    "maxLevel": 3,
+    "sourceWidth": 8192,
+    "width": 8192,
+    "height": 4096,
+    "url": "https://www.solarsystemscope.com/textures/download/8k_mercury.jpg",
+    "sha256": "5c8bd885ae3571c6ba2cd34b3446b9c6d767e314bf0ee8c1d5c147cadd388fc3"
+  },
+  "venus-surface": {
+    "maxLevel": 3,
+    "sourceWidth": 8192,
+    "width": 8192,
+    "height": 4096,
+    "url": "https://www.solarsystemscope.com/textures/download/8k_venus_surface.jpg",
+    "sha256": "9bc21a50577ed8ac734cda91058724c7a741c19427aa276224ce349351432c5b"
+  },
+  "europa": {
+    "maxLevel": 0,
+    "sourceWidth": 1440,
+    "width": 1024,
+    "height": 512,
+    "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Jupiter%20-%20Europa/Jupiter%20-%20Europa.jpg",
+    "sha256": "50d01ca5c01352d1c507bb17fefd1c46ba11260305656250062c6cdac89c8ebf"
+  },
+  "ganymede": {
+    "maxLevel": 0,
+    "sourceWidth": 1440,
+    "width": 1024,
+    "height": 512,
+    "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Jupiter%20-%20Ganymede/Jupiter%20-%20Ganymede.jpg",
+    "sha256": "1aa9d5a6f20e72230c13ce3d78592fc056e22f1e1ee39ea7acfa7e08d09fe173"
+  },
+  "callisto": {
+    "maxLevel": 0,
+    "sourceWidth": 1440,
+    "width": 1024,
+    "height": 512,
+    "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Jupiter%20-%20Callisto/Jupiter%20-%20Callisto.jpg",
+    "sha256": "b9f4fa5db94debabd12814853fd132db3449889646a490b6f95a897b2c47b121"
+  },
+  "titan": {
+    "maxLevel": 0,
+    "sourceWidth": 720,
+    "width": 1024,
+    "height": 512,
+    "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Saturn%20-%20Titan/Saturn%20-%20Titan.jpg",
+    "sha256": "a213516e3ccbe46bfbdb576963859c82c75799612ccab775ec3cf24b451feca0"
+  },
+  "enceladus": {
+    "maxLevel": 0,
+    "sourceWidth": 1440,
+    "width": 1024,
+    "height": 512,
+    "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Saturn%20-%20Enceladus/Saturn%20-%20Enceladus.jpg",
+    "sha256": "4e16d38b98b788468e4f005b56d04282ccfe2f086eebfb1c0e5d20d8fd65ebef"
+  },
+  "triton": {
+    "maxLevel": 0,
+    "sourceWidth": 1440,
+    "width": 1024,
+    "height": 512,
+    "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Neptune%20-%20Triton/Neptune%20-%20Triton.jpg",
+    "sha256": "6a5015beaf860426d9505f054565c9ad28ba3822054d5b750c74b4d8e61eb4f3"
+  },
+  "earth-height": {
+    "min": 0.0,
+    "max": 6320.38427734375,
+    "width": 4096,
+    "url": "https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO2022/data/60s/60s_surface_elev_gtif/ETOPO_2022_v1_60s_N90W180_surface.tif",
+    "sha256": "9d27d4b8ea8e76977e2988bca667d7c8fa68b927355feffcddd6b4875a7fd08e"
+  },
+  "mars-height": {
+    "min": -8140.40673828125,
+    "max": 21151.056640625,
+    "width": 4096,
+    "url": "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg016/megt90n000eb.img",
+    "sha256": "d18d9b9ab8c5516d02e157dd2cde0f1d0d160c21940e953ba22391269a545e7b"
+  },
+  "saturn": {
+    "maxLevel": 2,
+    "sourceWidth": 4096,
+    "width": 4096,
+    "height": 2048,
+    "url": "https://www.solarsystemscope.com/textures/download/8k_saturn.jpg",
+    "sha256": "0d39a4a490c87c3edabe00a3881a29bb3418364178c79c534fe0986e97e09853"
+  },
+  "sun": {
+    "maxLevel": 2,
+    "sourceWidth": 4096,
+    "width": 4096,
+    "height": 2048,
+    "url": "https://www.solarsystemscope.com/textures/download/8k_sun.jpg",
+    "sha256": "f22b1cfb306ddce72a7e3b628668a0175b745038ce6268557cb2f7f1bdf98b9d"
+  },
+  "io": {
+    "maxLevel": 0,
+    "sourceWidth": 1440,
+    "width": 1024,
+    "height": 512,
+    "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Jupiter%20-%20Io%20%28A%29/Jupiter%20-%20Io%20%28A%29.jpg",
+    "sha256": "fdd79a58331864ec1f93035b3ebb92767b01715d2ce75d5b73cf8537b6af3382"
+  }
+}
