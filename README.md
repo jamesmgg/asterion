@@ -38,6 +38,7 @@ To remove only this route: `tailscale serve --tcp 8787 off`. Do not reset all Se
 - Visit the Sun, all eight planets, and eight major moons. On a phone, swipe the destination dock to reach the outer worlds; Explore lists each planet’s moons.
 - Drag to orbit; scroll or pinch to zoom. The + / − buttons and camera reset provide alternatives.
 - Solar system view offers readable spacing or true orbital distances, plus oblique, top-down, edge-on and inner-system cameras. Planet sizes are enlarged in both map modes. Moon-system views preserve actual relative radii and distances.
+- The main asteroid belt is visible between Mars and Jupiter. Toggle **Asteroid belt** in Solar system settings, or choose **Asteroid belt** in the camera menu for a closer view. Pause and time-flow controls also govern the belt.
 - Set the simulation date and time speed, pause, or return to now. Space toggles pause; brackets change worlds.
 - Close-ups stream local tiles up to **16K for Earth and the Moon**, **8K for Mercury, Mars and Venus’s revealed surface**, and the actual source limits elsewhere. The altitude/detail readout shows refinement and source limits.
 - Earth, Moon and Mars use measured elevation with no vertical exaggeration. Explore includes cloud visibility, Venus surface reveal, terrain and detail toggles, and adaptive GPU resolution. Earth has a separate cloud deck, cloud shadows, night lights, ocean glint and a scattering atmosphere.
@@ -57,7 +58,7 @@ This is a scientific exploration app with an explicitly simplified impact model.
 
 Nine mutually interacting Newtonian point masses (Sun + eight planets), in AU, days, and solar masses. Velocity-Verlet steps never exceed 0.125 day. Initial positions and centered-difference velocities are derived from JPL SSD's approximate Keplerian elements and century rates. Initial dates are restricted to 1800–2050. Earth represents the Earth–Moon barycenter approximately, without a separate Moon mass. No relativity, tides, or small-body perturbations. Moon trajectories are displayed separately and do not add masses to this nine-body integrator. UTC approximates ephemeris time. This is suitable for exploration, not spacecraft navigation.
 
-Close-ups normalize the planet radius, retain rotation periods and approximate obliquities, and illuminate surfaces from the sunward direction. Prime-meridian alignment, spin-axis directions, seasons, cloud motion, and planetary reference orbit guides are approximate or illustrative. Eight moon trajectories use planet-centered JPL Horizons states with cubic Hermite interpolation during 2026–2027; fixed approximate Keplerian orbits and illustrative phases are used outside that window. Moon orbit guides sample the same trajectory source. Eclipse shading computes solar and occluder angular disk overlap; the Io demonstration is deliberately aligned, not a historical event. The asteroid belt is decorative. Impacts do not change a planet's mass, spin, orbit, or global structure.
+Close-ups normalize the planet radius, retain rotation periods and approximate obliquities, and illuminate surfaces from the sunward direction. Prime-meridian alignment, spin-axis directions, seasons, cloud motion, and planetary reference orbit guides are approximate or illustrative. Eight moon trajectories use planet-centered JPL Horizons states with cubic Hermite interpolation during 2026–2027; fixed approximate Keplerian orbits and illustrative phases are used outside that window. Moon orbit guides sample the same trajectory source. Eclipse shading computes solar and occluder angular disk overlap; the Io demonstration is deliberately aligned, not a historical event. The asteroid belt uses a reproducible population of inclined Keplerian orbits with semimajor axes from 2.2–3.2 AU. It follows simulation time and remains visible in both distance scales. Its enlarged markers show a population illustration, not observed positions of individually catalogued asteroids, and it does not perturb the planets. Impacts do not change a planet's mass, spin, orbit, or global structure.
 
 ### Impact entry
 
@@ -83,6 +84,7 @@ Sources:
 
 - [JPL approximate planetary positions and elements](https://ssd.jpl.nasa.gov/planets/approx_pos.html)
 - [JPL planetary physical parameters](https://ssd.jpl.nasa.gov/planets/phys_par.html)
+- [NASA Dawn: asteroid belt distribution](https://science.nasa.gov/mission/dawn/faq/)
 - [JPL Horizons system](https://ssd.jpl.nasa.gov/horizons/)
 - [JPL satellite physical parameters](https://ssd.jpl.nasa.gov/sats/phys_par/)
 - [Imagery and measured-elevation provenance](ASSETS.md)
@@ -98,7 +100,7 @@ docker compose --profile test build tests
 docker compose --profile test run --rm tests
 ```
 
-The 22 numerical/asset tests cover debris energy conservation, mass budgets, escape versus reimpact classification, eclipse overlap, complete tile pyramids, bundled moon ephemerides, orbital residuals, a year of energy/momentum conservation, mass/energy scaling, gravitational acceleration in vacuum, airbursts, crater formation, gas-giant behavior, invalid inputs, and actual image-file signatures. Eight browser tests cover every planet and the new moon/eclipses/detail views, impact scrubbing and return to orbital time, scale modes, launches, replay, rendering errors, mobile layout, cancellation, touch targeting, pinch zoom, export, persistence, and science documentation. Screenshots are saved under `test-results/`.
+The 24 numerical/asset tests cover belt placement, Kepler periods and pause behavior, debris energy conservation, mass budgets, escape versus reimpact classification, eclipse overlap, complete tile pyramids, bundled moon ephemerides, orbital residuals, a year of energy/momentum conservation, mass/energy scaling, gravitational acceleration in vacuum, airbursts, crater formation, gas-giant behavior, invalid inputs, and actual image-file signatures. Nine browser tests cover every planet and the new moon/eclipses/detail views, impact scrubbing and return to orbital time, scale modes, launches, replay, rendering errors, mobile layout, cancellation, touch targeting, pinch zoom, export, persistence, and science documentation. Screenshots are saved under `test-results/`.
 
 Local development (Node 24+): `npm ci`, `npm test`, `npm run dev`. Local Vite binds 127.0.0.1. Docker is the canonical running application.
 

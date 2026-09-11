@@ -19,6 +19,7 @@ import {
 import { TerrainStream } from "./terrain.ts";
 import type { Dataset } from "./terrain.ts";
 import { ImpactSequence } from "./impact-scene.ts";
+import { AsteroidBelt } from "./belt.ts";
 import type { Playback } from "./impact-scene.ts";
 import type { Planet } from "./data.ts";
 import { planetPosition } from "./physics.ts";
@@ -70,7 +71,12 @@ export class Observatory {
   showLabels = true;
   root = new THREE.Group();
   orbitGroup = new THREE.Group();
-  belt = new THREE.Group();
+  belt: AsteroidBelt;
+  showBelt = true;
+  private beltLabel: HTMLSpanElement;
+  private beltTick = 0;
+  private systemCamera: "oblique" | "top" | "edge" | "inner" | "belt" =
+    "oblique";
   worldGroup = new THREE.Group();
   targetLocal: THREE.Vector3 | null = null;
   aiming = false;
@@ -118,6 +124,12 @@ export class Observatory {
     this.container = container;
     this.labelContainer = labelContainer;
     this.mobile = innerWidth < 760;
+    this.belt = new AsteroidBelt(this.mobile ? 2000 : 4800);
+    this.beltLabel = document.createElement("span");
+    this.beltLabel.id = "belt-label";
+    this.beltLabel.textContent = "Main asteroid belt";
+    this.beltLabel.hidden = true;
+    labelContainer.append(this.beltLabel);
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
@@ -169,7 +181,6 @@ export class Observatory {
     this.makeStars();
     for (const p of BODIES) this.makeWorld(p);
     this.makeOrbits();
-    this.makeBelt();
     this.targetMarker = this.makeTarget();
     this.focus("earth", true);
     void fetch("/tiles/manifest.json")
@@ -436,32 +447,6 @@ export class Observatory {
       this.orbitGroup.add(line);
     }
   }
-  makeBelt() {
-    const random = rng(21),
-      pos = new Float32Array(1800 * 3);
-    for (let i = 0; i < 1800; i++) {
-      const a = random() * Math.PI * 2,
-        r = 15.5 + random() * 1.5;
-      pos.set(
-        [Math.cos(a) * r, (random() - 0.5) * 0.25, Math.sin(a) * r],
-        i * 3,
-      );
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    this.belt.add(
-      new THREE.Points(
-        g,
-        new THREE.PointsMaterial({
-          color: "#a99c87",
-          size: 0.025,
-          transparent: true,
-          opacity: 0.3,
-          sizeAttenuation: true,
-        }),
-      ),
-    );
-  }
   makeTarget() {
     const group = new THREE.Group();
     const ring = new THREE.Mesh(
@@ -493,10 +478,17 @@ export class Observatory {
   }
   resize() {
     const { width: w, height: h } = this.container.getBoundingClientRect();
+    const previousAspect = this.camera.aspect;
     this.mobile = innerWidth < 760;
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    if (
+      this.view === "system" &&
+      this.systemCamera === "belt" &&
+      Math.abs(previousAspect - this.camera.aspect) > 0.001
+    )
+      this.setSystemCamera("belt");
   }
   focus(id: string, instant = false) {
     this.clearEvent();
@@ -516,6 +508,7 @@ export class Observatory {
     }
     this.orbitGroup.visible = false;
     this.belt.visible = false;
+    this.beltLabel.hidden = true;
     this.controls.target.set(0, 0, 0);
     this.controls.minDistance = 1.003;
     this.controls.maxDistance = 180;
@@ -563,14 +556,22 @@ export class Observatory {
     this.controls.maxDistance = 150;
     this.desiredCamera = new THREE.Vector3(2, 35, 43);
     this.orbitGroup.visible = this.showOrbits;
-    this.belt.visible = !this.trueScale;
+    this.systemCamera = "oblique";
+    this.belt.visible = this.showBelt;
+    this.belt.update(this.selectedJD, this.trueScale);
     for (const [id, w] of this.worlds)
       w.root.visible = PLANETS.some((p) => p.id === id);
+  }
+  setBelt(show: boolean) {
+    this.showBelt = show;
+    this.belt.visible = this.view === "system" && show;
+    this.beltLabel.hidden = !this.belt.visible;
   }
   setScale(real: boolean) {
     this.trueScale = real;
     this.makeOrbits();
-    this.belt.visible = this.view === "system" && !real;
+    this.belt.update(this.selectedJD, real);
+    if (this.view === "system") this.setSystemCamera(this.systemCamera);
   }
   zoom(multiplier: number) {
     this.desiredCamera = null;
@@ -946,8 +947,25 @@ export class Observatory {
       .multiplyScalar(3.4)
       .add(new THREE.Vector3(0, 0.3, 0));
   }
-  setSystemCamera(mode: "oblique" | "top" | "edge" | "inner") {
+  setSystemCamera(mode: "oblique" | "top" | "edge" | "inner" | "belt") {
+    this.systemCamera = mode;
     this.controls.target.set(0, 0, 0);
+    if (mode === "belt") {
+      const radius = this.trueScale ? 4.1 : 17.2;
+      const halfFov = Math.atan(
+        Math.tan((this.camera.fov * Math.PI) / 360) *
+          Math.min(
+            1,
+            this.container.clientWidth /
+              Math.max(1, this.container.clientHeight),
+          ),
+      );
+      this.controls.maxDistance = 200;
+      this.desiredCamera = new THREE.Vector3(0, 0.9, 0.45)
+        .normalize()
+        .multiplyScalar((radius / Math.sin(halfFov)) * 1.12);
+      return;
+    }
     this.desiredCamera =
       mode === "top"
         ? new THREE.Vector3(0, 75, 0.01)
@@ -1155,6 +1173,23 @@ export class Observatory {
         .addScaledVector(outward, this.entry.incomingRadius * 7)
         .addScaledVector(tangent, this.entry.incomingRadius * 3);
       this.controls.update();
+    }
+    this.beltLabel.hidden = this.view !== "system" || !this.showBelt;
+    if (this.view === "system" && this.showBelt) {
+      this.belt.visible = true;
+      this.belt.points.material.uniforms.pixelRatio.value =
+        this.renderer.getPixelRatio();
+      if (now - this.beltTick > 50) {
+        this.beltTick = now;
+        this.belt.update(sim.jd, this.trueScale);
+      }
+      const radius = this.trueScale ? 3.2 : 16.5;
+      const anchor = new THREE.Vector3(radius * 0.8, 0, radius * 0.6).project(
+        this.camera,
+      );
+      this.beltLabel.hidden =
+        anchor.z > 1 || Math.abs(anchor.x) > 1 || Math.abs(anchor.y) > 1;
+      this.beltLabel.style.transform = `translate(${(anchor.x * 0.5 + 0.5) * this.container.clientWidth}px,${(-anchor.y * 0.5 + 0.5) * this.container.clientHeight + 20}px) translate(-50%,0)`;
     }
     this.renderer.render(this.scene, this.camera);
     if (this.assetsReady && this.readyCallback && !this.desiredCamera) {

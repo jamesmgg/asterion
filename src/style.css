@@ -1112,6 +1112,20 @@ details p {
   font-size: 11px;
   color: #a9bfd4;
 }
+#belt-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: #dfc295;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 5px #000,
+    0 0 10px #050b16;
+  pointer-events: none;
+}
 #system-settings select {
   display: block;
   width: 100%;
