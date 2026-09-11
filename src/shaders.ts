@@ -1,19 +1,55 @@
+import { craterProfileGLSL, craterMaterialGLSL } from "./craters.ts";
+
 export const reliefGLSL = `
 uniform sampler2D heightMap; uniform vec2 heightRange; uniform float terrain;
 uniform vec4 craters[8]; uniform float craterDepths[8]; uniform int craterCount;
+uniform float craterComplexities[8];uniform float craterAges[8];
+${craterProfileGLSL}
 float heightAt(vec2 p){vec2 packed=texture2D(heightMap,p).rg;return terrain*(heightRange.x+dot(packed,vec2(65280.,255.))/65535.*heightRange.y);}
+vec2 craterCoordinates(vec3 n,int i){
+ vec3 c=craters[i].xyz;vec3 east=normalize(cross(abs(c.y)>.99?vec3(1.,0.,0.):vec3(0.,1.,0.),c));
+ vec3 north=cross(c,east);float x=dot(n,east),y=dot(n,north);
+ return vec2(2.*asin(min(1.,.5*length(normalize(n)-c)))/max(craters[i].w,1e-8),length(vec2(x,y))<1e-8?0.:atan(y,x));
+}
+int craterOwner(vec3 n){int owner=-1;float nearest=2.09,newest=-1.;
+ // Use the patch whose dense inner rings best resolve this point. Age only
+ // breaks coincident ties; excavation and materials have their own chronology.
+ for(int i=0;i<8;i++){if(i>=craterCount)break;float r=craterCoordinates(n,i).x;
+ if(craters[i].w>0.&&r<2.09&&(r<nearest-1e-5||(abs(r-nearest)<=1e-5&&craterAges[i]>newest))){owner=i;nearest=r;newest=craterAges[i];}}
+ return owner;
+}
 float excavation(vec3 n){float h=0.;for(int i=0;i<8;i++){if(i>=craterCount)break;
- float radius=craters[i].w;if(radius<=0.)continue;
- float r=2.*asin(min(1.,.5*length(normalize(n)-craters[i].xyz)))/radius;
- float bowl=-craterDepths[i]*pow(max(0.,1.-r*r),2.);
- float rim=craterDepths[i]*.24*exp(-pow((r-1.)/.16,2.));
- h+=bowl+rim; }return h;}
+ vec2 c=craterCoordinates(n,i);if(c.x>=2.1)continue;
+ float remain=1.;
+ for(int j=0;j<8;j++){if(j>=craterCount)break;if(craterAges[j]>craterAges[i])remain*=smoothstep(1.,1.8,craterCoordinates(n,j).x);}
+ h+=craterProfile(c.x,c.y,craterDepths[i],craterComplexities[i])*remain;
+ }return h;}
+vec3 spherePoint(vec2 p){float t=p.y*3.14159265359,phi=p.x*6.28318530718;return vec3(-cos(phi)*sin(t),-cos(t),sin(phi)*sin(t));}
 `;
 export const surfaceVertex = `
 varying vec2 vUv;varying vec3 vNormal;varying vec3 vWorld;varying vec3 vObject;
+uniform float craterPatch;uniform float craterPatchIndex;uniform vec2 groundResolution;
 ${reliefGLSL}
+vec3 groundVertex(vec2 uv){return spherePoint(uv)*(1.+heightAt(uv));}
+// Match the surrounding terrain's triangle plane at the edge of a dense patch.
+// Its imagery LODs all share this lattice, so loading a sharper tile never moves it.
+float planeRadius(vec3 n,vec3 a,vec3 b,vec3 c){vec3 normal=cross(b-a,c-a);return dot(a,normal)/dot(n,normal);}
+float groundPlane(vec2 p,out float coarseRadius){vec2 cell=vec2(fract(p.x),clamp(p.y,0.,.9999999))*groundResolution;
+ vec2 f=fract(cell),lo=floor(cell)/groundResolution,stepUV=1./groundResolution;
+ vec3 a=groundVertex(lo),b=groundVertex(lo+vec2(stepUV.x,0.)),c=groundVertex(lo+vec2(0.,stepUV.y)),d=groundVertex(lo+stepUV);
+ vec3 n=spherePoint(p),diagonal=cross(b,c);
+ vec3 first=lo.y<.5/groundResolution.y?d:lo.y>1.-1.5/groundResolution.y?a:dot(n,diagonal)*dot(a,diagonal)>=0.?a:d;
+ float baseline=planeRadius(n,first,b,c);
+ first+=normalize(first)*excavation(normalize(first));b+=normalize(b)*excavation(normalize(b));c+=normalize(c)*excavation(normalize(c));
+ coarseRadius=planeRadius(n,first,b,c);
+ return baseline;
+}
 void main(){vUv=uv;vec3 n=normalize(position);float h=heightAt(uv)+excavation(n);
- vec3 p=n*(1.+h);vObject=n;vNormal=normalize(mat3(modelMatrix)*n);
+ vec3 p=n*(1.+h);
+ if(craterPatch>.5){float r=craterCoordinates(n,int(craterPatchIndex)).x;float coarse;float baseline=groundPlane(uv,coarse);p=n*mix(baseline+excavation(n),coarse,smoothstep(1.65,2.04,r));}
+ // Cutouts and replacement patches use actual radial surface positions. UV
+ // interpolation on a coarse triangle otherwise shifts a small patch sideways.
+ vObject=p;vNormal=normalize(mat3(modelMatrix)*n);
  vec4 world=modelMatrix*vec4(p,1.);vWorld=world.xyz;gl_Position=projectionMatrix*viewMatrix*world;}
 `;
 export const eclipseGLSL = `
@@ -34,12 +70,22 @@ uniform vec4 tileRect;uniform float tiled;uniform float time;uniform float giant
 uniform sampler2D parentMap;uniform vec4 parentRect;uniform float parentTiled;uniform float detailBlend;
 uniform float reliefEnabled;uniform vec2 heightTexel;uniform mat3 objectNormalMatrix;
 uniform float cloudOffset;uniform float albedoScale;uniform float craterPatch;
+uniform float craterPatchIndex;uniform float patchTiled;uniform vec4 patchRect;
+uniform int craterStart;uniform vec4 cloudClear;
 varying vec2 vUv;varying vec3 vNormal;varying vec3 vWorld;varying vec3 vObject;
 ${reliefGLSL}
 ${eclipseGLSL}
+${craterMaterialGLSL}
 void main(){
- if(craterPatch<.5){for(int i=0;i<8;i++){if(i>=craterCount)break;float radius=craters[i].w;if(radius>0.&&2.*asin(min(1.,.5*length(normalize(vObject)-craters[i].xyz)))<radius*1.55)discard;}}
- vec2 uv=vUv;vec3 n=normalize(vNormal),s=normalize(sunDir),viewDir=normalize(cameraPosition-vWorld);
+ vec3 objectN=normalize(vObject);
+ vec2 uv=craterPatch>.5?vec2(fract(atan(objectN.z,-objectN.x)/6.28318530718+1.),acos(clamp(-objectN.y,-1.,1.))/3.14159265359):vec2(fract(vUv.x),vUv.y);
+ int owner=craterOwner(objectN);
+ if(craterPatch>.5){if(owner!=int(craterPatchIndex))discard;
+  if(patchTiled>.5&&(uv.x<patchRect.x||uv.y<patchRect.y||uv.x>=patchRect.x+patchRect.z||uv.y>=patchRect.y+patchRect.w))discard;
+ }else if(owner>=0){for(int i=0;i<8;i++){if(i>=craterCount)break;if(craterCoordinates(objectN,i).x<1.98)discard;}}
+ // A narrow, unchanged outer guard shares the ground's imagery and shading.
+ // It covers triangle-edge rounding without moving terrain into the clouds.
+ vec3 n=normalize(vNormal),s=normalize(sunDir),viewDir=normalize(cameraPosition-vWorld);
  // Metric elevation gradients perturb the same spherical tangent frame as geometry.
  if(reliefEnabled>.5){
   float du=(heightAt(uv+vec2(heightTexel.x,0.))-heightAt(uv-vec2(heightTexel.x,0.)))/(2.*heightTexel.x*6.2831853*max(.05,sin(uv.y*3.14159265)));
@@ -48,8 +94,8 @@ void main(){
   n=normalize(n-objectNormalMatrix*east*du-objectNormalMatrix*north*dv);
  }
  // Geometric derivatives shade the excavated bowl and raised rim.
- for(int i=0;i<8;i++){if(i>=craterCount)break;float a=2.*asin(min(1.,.5*length(normalize(vObject)-craters[i].xyz)))/max(craters[i].w,.000001);
-  if(a<1.5){vec3 gn=normalize(cross(dFdx(vWorld),dFdy(vWorld)));if(dot(gn,n)<0.)gn=-gn;n=gn;}}
+ if(owner>=0){float altered=0.;for(int i=0;i<8;i++){if(i>=craterCount)break;altered=max(altered,1.-smoothstep(1.25,1.8,craterCoordinates(objectN,i).x));}
+ vec3 gn=normalize(cross(dFdx(vWorld),dFdy(vWorld)));if(dot(gn,n)<0.)gn=-gn;n=normalize(mix(n,gn,altered));}
  vec2 sampleUv=uv;
  // Very small differential zonal drift; it illustrates weather, not a forecast.
  if(giant>.5)sampleUv.x+=sin(uv.y*75.)*sin(time*.012)*.0008;
@@ -62,16 +108,20 @@ void main(){
  }
  albedo*=albedoScale;
  if(earth>.5){float water=texture2D(specularMap,uv).r;albedo=mix(albedo,max(albedo,vec3(.004,.015,.037)),water);}
+ float disturbance=0.;
+ if(owner>=0){for(int step=0;step<8;step++){if(step>=craterCount)break;int i=int(mod(float(craterStart+step),8.));
+  vec2 c=craterCoordinates(objectN,i);if(c.x>=2.1)continue;disturbance=1.-(1.-disturbance)*(1.-craterDisturbance(c.x,c.y));albedo=craterAlbedo(c.x,c.y,craterComplexities[i],albedo);}}
  float ndl=dot(n,s),vis=sunlight(vWorld,s);
  float cloudShadow=1.;
  if(earth>.5&&cloudAmount>.5){vec3 localSun=transpose(objectNormalMatrix)*s;
   vec3 east=normalize(vec3(vObject.z,0.,-vObject.x));vec3 north=normalize(cross(vObject,east));
   vec2 offset=vec2(dot(localSun,east)/max(.05,sin(uv.y*3.14159265)),dot(localSun,north))*.0004/max(.07,ndl);
-  cloudShadow=1.-texture2D(cloudMap,uv+offset+vec2(cloudOffset,0.)).r*.7;}
+  float clear=cloudClear.w>0.?1.-smoothstep(.65,1.,length(objectN-cloudClear.xyz)/cloudClear.w):0.;
+  cloudShadow=1.-texture2D(cloudMap,uv+offset+vec2(cloudOffset,0.)).r*.7*(1.-clear);}
  vec3 color=albedo*(.016+max(ndl,0.)*1.75*vis*cloudShadow);
  if(earth>.5){
-  vec3 night=pow(texture2D(nightMap,uv).rgb,vec3(2.2));color+=night*(1.-smoothstep(-.2,.05,ndl))*1.3;
-  float ocean=texture2D(specularMap,uv).r;vec3 halfD=normalize(s+viewDir);
+  vec3 night=pow(texture2D(nightMap,uv).rgb,vec3(2.2));color+=night*(1.-smoothstep(-.2,.05,ndl))*1.3*(1.-disturbance);
+  float ocean=texture2D(specularMap,uv).r*(1.-disturbance);vec3 halfD=normalize(s+viewDir);
   // Rough dielectric water (GGX + Smith masking + Schlick Fresnel). The broad
   // distribution and ~2% normal reflectance avoid a painted-on white lamp spot.
   float nl=max(ndl,0.),nv=max(dot(n,viewDir),.001),nh=max(dot(n,halfD),0.);
@@ -83,8 +133,6 @@ void main(){
   float reflection=distribution*masking*fresnel/(4.*max(nl*nv,.0001));
   color+=vec3(1.,.97,.92)*reflection*ocean*nl*vis*cloudShadow*1.75;
  }
- for(int i=0;i<8;i++){if(i>=craterCount)break;float r=2.*asin(min(1.,.5*length(normalize(vObject)-craters[i].xyz)))/max(craters[i].w,.000001);
-  color*=1.-.6*(1.-smoothstep(.65,1.45,r));}
  if(star>.5)color=albedo*2.3+vec3(.26,.085,.008);
  gl_FragColor=vec4(color,1.);
  #include <tonemapping_fragment>
@@ -92,8 +140,8 @@ void main(){
 }`;
 export const simpleVertex = `varying vec2 vUv;varying vec3 vNormal;varying vec3 vWorld;varying vec3 vLocal;
 void main(){vUv=uv;vLocal=position;vNormal=normalize(mat3(modelMatrix)*normal);vec4 w=modelMatrix*vec4(position,1.);vWorld=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`;
-export const cloudFragment = `uniform sampler2D cloudMap;uniform vec3 sunDir;uniform float cloudOffset;
-varying vec2 vUv;varying vec3 vNormal;varying vec3 vWorld;
+export const cloudFragment = `uniform sampler2D cloudMap;uniform vec3 sunDir;uniform float cloudOffset;uniform vec4 cloudClear;
+varying vec2 vUv;varying vec3 vNormal;varying vec3 vWorld;varying vec3 vLocal;
 ${eclipseGLSL}
 void main(){vec2 uv=vUv+vec2(cloudOffset,0.);float density=texture2D(cloudMap,uv).r;
  float d=dot(normalize(vNormal),normalize(sunDir));float vis=sunlight(vWorld,normalize(sunDir));
@@ -102,7 +150,8 @@ void main(){vec2 uv=vUv+vec2(cloudOffset,0.);float density=texture2D(cloudMap,uv
  vec3 c=mix(vec3(.23,.32,.43),vec3(1.),smoothstep(-.1,.45,d));
  c*=.035+max(0.,d)*vis*(1.35-.35*ridge);
  c+=vec3(.42,.16,.055)*exp(-pow(d/.14,2.))*vis;
- gl_FragColor=vec4(c,clamp(density*1.4-.05,0.,.94));
+ float clear=cloudClear.w>0.?1.-smoothstep(.65,1.,length(normalize(vLocal)-cloudClear.xyz)/cloudClear.w):0.;
+ gl_FragColor=vec4(c,clamp(density*1.4-.05,0.,.94)*(1.-clear));
  #include <tonemapping_fragment>
  #include <colorspace_fragment>
 }`;

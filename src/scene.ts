@@ -18,6 +18,7 @@ import {
 } from "./shaders.ts";
 import { TerrainStream } from "./terrain.ts";
 import { closeUpNearPlane } from "./detail.ts";
+import { createCraterGeometry, craterComplexity } from "./craters.ts";
 import type { Dataset } from "./terrain.ts";
 import { ImpactSequence } from "./impact-scene.ts";
 import { AsteroidBelt } from "./belt.ts";
@@ -25,7 +26,7 @@ import { CosmicScene } from "./cosmic-scene.ts";
 import type { CosmicDestination } from "./cosmic-data.ts";
 import type { Playback } from "./impact-scene.ts";
 import type { Planet } from "./data.ts";
-import { AU, planetPosition } from "./physics.ts";
+import { AU, G, planetPosition } from "./physics.ts";
 import type { SolarSystem, ImpactInput, ImpactResult } from "./physics.ts";
 
 type World = {
@@ -248,7 +249,20 @@ export class Observatory {
       objectNormalMatrix: { value: new THREE.Matrix3() },
       craters: { value: Array.from({ length: 8 }, () => new THREE.Vector4()) },
       craterDepths: { value: new Float32Array(8) },
+      craterComplexities: { value: new Float32Array(8) },
+      craterAges: { value: new Float32Array(8) },
       craterCount: { value: 0 },
+      craterStart: { value: 0 },
+      cloudClear: { value: new THREE.Vector4() },
+      groundResolution: {
+        value: new THREE.Vector2(
+          this.mobile ? 96 : 160,
+          this.mobile ? 64 : 100,
+        ),
+      },
+      craterPatchIndex: { value: -1 },
+      patchTiled: { value: 0 },
+      patchRect: { value: new THREE.Vector4(0, 0, 1, 1) },
       tiled: { value: 0 },
       tileRect: { value: new THREE.Vector4(0, 0, 1, 1) },
       parentMap: { value: this.texture(p.id + ".jpg") },
@@ -888,16 +902,52 @@ export class Observatory {
       return;
     }
     const crater = this.entry.result.craterDiameter / (2 * p.radius),
-      height = Math.max(0.004, Math.min(0.6, crater * 5));
-    const tangent = new THREE.Vector3(0, 1, 0).cross(normal).normalize();
-    this.controls.target.copy(normal);
-    this.controls.minDistance = Math.max(0.003, height * 0.3);
+      height = Math.max(0.00025, Math.min(0.6, crater * 3.8));
+    const tangent = new THREE.Vector3(
+      0,
+      Math.abs(normal.y) > 0.99 ? 0 : 1,
+      Math.abs(normal.y) > 0.99 ? 1 : 0,
+    )
+      .cross(normal)
+      .normalize();
+    const ground = this.impactSurfaceHeight(w);
+    this.controls.target.copy(normal).multiplyScalar(1 + ground);
+    this.controls.minDistance = Math.max(0.00008, height * 0.25);
     this.controls.maxDistance = 180;
     this.desiredCamera = normal
       .clone()
-      .multiplyScalar(1 + height * 0.85)
-      .addScaledVector(tangent, height * 1.7)
-      .add(new THREE.Vector3(0, height * 0.5, 0));
+      .multiplyScalar(1 + ground + height)
+      .addScaledVector(tangent, height * 0.55);
+  }
+  private impactSurfaceHeight(w: World) {
+    if (!this.targetLocal || !this.terrainEnabled) return 0;
+    const u = w.material.uniforms,
+      image = u.heightMap.value.image;
+    if (!image?.width || !u.reliefEnabled.value) return 0;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d")!;
+    const longitude =
+      (Math.atan2(this.targetLocal.z, -this.targetLocal.x) / (2 * Math.PI) +
+        1) %
+      1;
+    const latitude = Math.acos(this.targetLocal.y) / Math.PI;
+    context.drawImage(
+      image,
+      longitude * (image.width - 1),
+      latitude * (image.height - 1),
+      1,
+      1,
+      0,
+      0,
+      1,
+      1,
+    );
+    const packed = context.getImageData(0, 0, 1, 1).data;
+    return (
+      u.heightRange.value.x +
+      ((packed[0] * 256 + packed[1]) / 65535) * u.heightRange.value.y
+    );
   }
   private addCrater(result: ImpactResult) {
     if (result.outcome !== "crater" || !this.targetLocal) return;
@@ -905,8 +955,9 @@ export class Observatory {
       w = this.worlds.get(p.id)!,
       u = w.material.uniforms;
     const count = u.craterCount.value as number,
-      index = (w.mesh.userData.craterCursor ?? 0) % 8;
-    w.mesh.userData.craterCursor = index + 1;
+      serial = (w.mesh.userData.craterCursor ?? 0) + 1,
+      index = (serial - 1) % 8;
+    w.mesh.userData.craterCursor = serial;
     u.craters.value[index].set(
       this.targetLocal.x,
       this.targetLocal.y,
@@ -914,7 +965,13 @@ export class Observatory {
       Math.min(0.35, result.craterDiameter / (2 * p.radius)),
     );
     u.craterDepths.value[index] = Math.min(0.05, result.craterDepth / p.radius);
+    u.craterAges.value[index] = serial;
+    u.craterComplexities.value[index] = craterComplexity(
+      result.craterDiameter,
+      (G * p.mass) / (p.radius * p.radius),
+    );
     u.craterCount.value = Math.min(8, count + 1);
+    u.craterStart.value = serial >= 8 ? serial % 8 : 0;
     for (const old of [...w.scars.children])
       if (old.userData.craterIndex === index) {
         old.removeFromParent();
@@ -923,48 +980,22 @@ export class Observatory {
       }
     // A dense local patch resolves even a small crater; the parent surface is cut
     // out in the fragment shader so its coarse triangles cannot fill the bowl.
-    const radius = u.craters.value[index].w,
-      extent = Math.min(0.85, radius * 1.75),
-      segments = this.mobile ? 64 : 128;
-    const geo = new THREE.PlaneGeometry(
-        extent * 2,
-        extent * 2,
-        segments,
-        segments,
-      ),
-      pos = geo.attributes.position,
-      uv = geo.attributes.uv;
-    const rotation = new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(0, 0, 1),
-        this.targetLocal,
-      ),
-      n = new THREE.Vector3();
-    const centerU =
-      (Math.atan2(this.targetLocal.z, -this.targetLocal.x) / (Math.PI * 2) +
-        1) %
-      1;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i),
-        y = pos.getY(i);
-      n.set(x, y, Math.sqrt(Math.max(0.01, 1 - x * x - y * y)))
-        .normalize()
-        .applyQuaternion(rotation);
-      pos.setXYZ(i, n.x, n.y, n.z);
-      let longitude = (Math.atan2(n.z, -n.x) / (Math.PI * 2) + 1) % 1;
-      if (longitude - centerU > 0.5) longitude -= 1;
-      if (longitude - centerU < -0.5) longitude += 1;
-      uv.setXY(i, longitude, Math.acos(-n.y) / Math.PI);
-    }
-    geo.computeVertexNormals();
+    const geo = createCraterGeometry(
+      this.targetLocal,
+      u.craters.value[index].w,
+      this.mobile,
+    );
     const mat = new THREE.ShaderMaterial({
       vertexShader: surfaceVertex,
       fragmentShader: surfaceFragment,
-      uniforms: { ...u, craterPatch: { value: 1 } },
-      polygonOffset: true,
-      polygonOffsetFactor: -8,
-      polygonOffsetUnits: -8,
+      uniforms: {
+        ...u,
+        craterPatch: { value: 1 },
+        craterPatchIndex: { value: index },
+      },
     });
     const patch = new THREE.Mesh(geo, mat);
+    patch.frustumCulled = false;
     patch.userData.craterIndex = index;
     w.scars.add(patch);
   }
@@ -981,6 +1012,8 @@ export class Observatory {
   }
   clearEvent() {
     this.followAsteroid = false;
+    for (const w of this.worlds.values())
+      w.material.uniforms.cloudClear.value.set(0, 0, 0, 0);
     this.camera.near = 0.005;
     this.camera.updateProjectionMatrix();
     if (this.entry) {
@@ -999,6 +1032,11 @@ export class Observatory {
       w.stream = undefined;
       w.material.colorWrite = true;
       w.material.depthWrite = true;
+      w.material.uniforms.groundResolution.value.set(
+        this.mobile ? 96 : 160,
+        this.mobile ? 64 : 100,
+      );
+      for (const patch of w.scars.children) patch.visible = true;
     }
   }
   private loadingEphemerides = new Set<string>();
@@ -1301,13 +1339,44 @@ export class Observatory {
           ? "Moon positions: JPL Horizons vectors (2026–2027)"
           : "Moon positions: approximate reference orbits";
     }
+    this.entry?.update(dt);
+    if (this.entry && this.targetLocal) {
+      const clear = this.worlds.get(this.selected)!.material.uniforms.cloudClear
+        .value;
+      const radius =
+        this.entry.result.craterDiameter /
+        (2 * BODIES.find((p) => p.id === this.selected)!.radius);
+      const spread =
+        this.entry.result.outcome === "crater"
+          ? Math.min(2.6, Math.max(0, this.entry.time - 3.5) * 0.85)
+          : 0;
+      clear.set(
+        this.targetLocal.x,
+        this.targetLocal.y,
+        this.targetLocal.z,
+        radius * spread,
+      );
+    }
+    if (this.followAsteroid && this.entry && this.entry.time >= 3.5)
+      this.impactCamera("site");
+    if (this.followAsteroid && this.entry) {
+      const position = this.entry.incomingPosition();
+      const outward = position.clone().normalize();
+      const tangent = new THREE.Vector3(0, 1, 0).cross(outward).normalize();
+      this.controls.target.copy(position);
+      this.camera.position
+        .copy(position)
+        .addScaledVector(outward, this.entry.incomingRadius * 7)
+        .addScaledVector(tangent, this.entry.incomingRadius * 3);
+      this.controls.update();
+    }
+    // Terrain and atmosphere must both use the final tracked camera pose.
     if (this.view === "planet") {
       const w = this.worlds.get(this.selected)!;
       this.localCamera.copy(this.camera.position);
       w.mesh.worldToLocal(this.localCamera);
       const pixels =
-        (this.container.clientHeight *
-          Math.min(devicePixelRatio, this.mobile ? 1.8 : 2)) /
+        (this.container.clientHeight * this.renderer.getPixelRatio()) /
         (2 * Math.tan((this.camera.fov * Math.PI) / 360));
       if (w.stream) {
         const ready = w.stream.update(
@@ -1318,6 +1387,11 @@ export class Observatory {
         );
         w.material.colorWrite = !ready;
         w.material.depthWrite = !ready;
+        w.material.uniforms.groundResolution.value.set(
+          ready ? w.stream.groundResolution * 2 : this.mobile ? 96 : 160,
+          ready ? w.stream.groundResolution : this.mobile ? 64 : 100,
+        );
+        w.stream.syncCraters(w.scars, ready);
       }
       const altitude = Math.max(
         0,
@@ -1335,20 +1409,6 @@ export class Observatory {
           `${altitude.toLocaleString(undefined, { maximumFractionDigits: 0 })} km altitude · ${detail}${dataset && dataset.maxLevel === w.stream?.activeLevel ? " · source limit" : ""}`,
         );
       }
-    }
-    this.entry?.update(dt);
-    if (this.followAsteroid && this.entry && this.entry.time >= 3.5)
-      this.impactCamera("site");
-    if (this.followAsteroid && this.entry) {
-      const position = this.entry.incomingPosition();
-      const outward = position.clone().normalize();
-      const tangent = new THREE.Vector3(0, 1, 0).cross(outward).normalize();
-      this.controls.target.copy(position);
-      this.camera.position
-        .copy(position)
-        .addScaledVector(outward, this.entry.incomingRadius * 7)
-        .addScaledVector(tangent, this.entry.incomingRadius * 3);
-      this.controls.update();
     }
     this.beltLabel.hidden = this.view !== "system" || !this.showBelt;
     if (this.view === "system" && this.showBelt) {
@@ -1377,7 +1437,7 @@ export class Observatory {
         .sub(w.root.position)
         .divideScalar(w.root.scale.x);
     }
-    if (this.view === "planet" && !this.entry) {
+    if (this.view === "planet" && !this.followAsteroid) {
       const p = BODIES.find((p) => p.id === this.selected)!;
       const relief = this.terrainEnabled
         ? (this.datasets[this.selected + "-height"]?.max ?? 0) / p.radius

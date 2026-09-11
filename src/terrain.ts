@@ -12,6 +12,9 @@ type Tile = {
   blend: number;
   split: boolean;
 };
+type CraterMesh = THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+type CraterDraw = { mesh: CraterMesh; source: CraterMesh; tile: Tile };
+type Bounds = { u0: number; u1: number; v0: number; v1: number };
 export interface Dataset {
   maxLevel?: number;
   sourceWidth?: number;
@@ -73,12 +76,18 @@ export class TerrainStream {
   private generation = 0;
   private previousTime = 0;
   private active = new Set<string>();
+  private craterDraws = new Map<string, CraterDraw>();
+  private craterBounds = new WeakMap<THREE.BufferGeometry, Bounds>();
+  private scars?: THREE.Group;
   constructor(
     public id: string,
     public metadata: Dataset,
     public uniforms: Record<string, THREE.IUniform>,
     public budget = 64,
   ) {}
+  get groundResolution() {
+    return this.budget <= 40 ? 128 : 256;
+  }
   private get(level: number, x: number, y: number): Tile | undefined {
     const key = `${level}/${x}-${y}`;
     let t = this.tiles.get(key);
@@ -141,7 +150,7 @@ export class TerrainStream {
     });
     // No depth bias: moving a surface toward the camera cuts through the cloud deck.
     const mesh = new THREE.Mesh(
-      tileGeometry(level, x, y, this.budget <= 40 ? 128 : 256),
+      tileGeometry(level, x, y, this.groundResolution),
       mat,
     );
     mesh.visible = false;
@@ -239,7 +248,129 @@ export class TerrainStream {
     this.group.visible = true;
     return true;
   }
+  /** Reuse the current terrain cover for crater imagery, including its LOD fades. */
+  syncCraters(scars: THREE.Group, ready: boolean) {
+    this.scars = scars;
+    const sources = scars.children.filter(
+      (object): object is CraterMesh =>
+        object instanceof THREE.Mesh &&
+        object.material instanceof THREE.ShaderMaterial &&
+        typeof object.userData.craterIndex === "number",
+    );
+    const present = new Set(sources);
+    for (const source of sources) source.visible = !ready;
+    for (const [key, draw] of this.craterDraws) {
+      if (
+        !present.has(draw.source) ||
+        draw.mesh.geometry !== draw.source.geometry
+      ) {
+        this.disposeCraterDraw(key, draw);
+      } else {
+        draw.mesh.visible = false;
+      }
+    }
+    if (!ready) return;
+    for (const [tileKey, tile] of this.tiles) {
+      if (!tile.ready || !tile.mesh.visible) continue;
+      const rect = tileBounds(tile.level, tile.x, tile.y);
+      for (const source of sources) {
+        if (!this.craterIntersects(source.geometry, rect)) continue;
+        const key = `${tileKey}:${source.userData.craterIndex}`;
+        let draw = this.craterDraws.get(key);
+        if (!draw) {
+          const material = new THREE.ShaderMaterial({
+            vertexShader: source.material.vertexShader,
+            fragmentShader: source.material.fragmentShader,
+            defines: { ...source.material.defines },
+            side: source.material.side,
+            uniforms: {
+              ...tile.mesh.material.uniforms,
+              craterPatch: source.material.uniforms.craterPatch,
+              craterPatchIndex: source.material.uniforms.craterPatchIndex,
+              patchTiled: { value: 1 },
+              patchRect: tile.mesh.material.uniforms.tileRect,
+            },
+          });
+          const mesh = new THREE.Mesh(source.geometry, material);
+          mesh.userData.craterIndex = source.userData.craterIndex;
+          mesh.frustumCulled = false;
+          this.group.add(mesh);
+          draw = { mesh, source, tile };
+          this.craterDraws.set(key, draw);
+        }
+        draw.mesh.position.copy(source.position);
+        draw.mesh.quaternion.copy(source.quaternion);
+        draw.mesh.scale.copy(source.scale);
+        draw.mesh.renderOrder = source.renderOrder;
+        draw.mesh.visible = true;
+      }
+    }
+  }
+  private craterIntersects(geometry: THREE.BufferGeometry, tile: Bounds) {
+    let bounds = this.craterBounds.get(geometry);
+    if (!bounds) {
+      const uv = geometry.getAttribute("uv");
+      const position = geometry.getAttribute("position");
+      const center = new THREE.Vector3()
+        .fromBufferAttribute(position, 0)
+        .normalize();
+      const point = new THREE.Vector3();
+      const longitude: number[] = [];
+      let v0 = 1,
+        v1 = 0,
+        reach = 0;
+      for (let i = 0; i < uv.count; i++) {
+        longitude.push(((uv.getX(i) % 1) + 1) % 1);
+        v0 = Math.min(v0, uv.getY(i));
+        v1 = Math.max(v1, uv.getY(i));
+        point.fromBufferAttribute(position, i).normalize();
+        reach = Math.max(
+          reach,
+          Math.acos(Math.max(-1, Math.min(1, point.dot(center)))),
+        );
+      }
+      longitude.sort((a, b) => a - b);
+      let largestGap = -1,
+        start = 0;
+      for (let i = 0; i < longitude.length; i++) {
+        const next =
+          i + 1 < longitude.length ? longitude[i + 1] : longitude[0] + 1;
+        if (next - longitude[i] > largestGap) {
+          largestGap = next - longitude[i];
+          start = next % 1;
+        }
+      }
+      bounds = {
+        u0: start,
+        u1: start + 1 - largestGap,
+        v0: Math.max(0, v0),
+        v1: Math.min(1, v1),
+      };
+      // A disk enclosing either pole owns every longitude near that pole, even
+      // if no sampled vertex lands exactly on the equirectangular singularity.
+      if (reach >= Math.acos(Math.abs(center.y)) - 1e-7) {
+        bounds.u0 = 0;
+        bounds.u1 = 1;
+        if (center.y > 0) bounds.v1 = 1;
+        else bounds.v0 = 0;
+      }
+      this.craterBounds.set(geometry, bounds);
+    }
+    if (bounds.v0 > tile.v1 || bounds.v1 < tile.v0) return false;
+    for (const shift of [-1, 0, 1])
+      if (bounds.u0 + shift < tile.u1 && bounds.u1 + shift > tile.u0)
+        return true;
+    return false;
+  }
+  private disposeCraterDraw(key: string, draw: CraterDraw) {
+    draw.mesh.removeFromParent();
+    // Geometry and textures belong to the source scar and terrain tile.
+    draw.mesh.material.dispose();
+    this.craterDraws.delete(key);
+  }
   private disposeTile(t: Tile) {
+    for (const [key, draw] of this.craterDraws)
+      if (draw.tile === t) this.disposeCraterDraw(key, draw);
     t.mesh.removeFromParent();
     t.mesh.geometry.dispose();
     t.mesh.material.dispose();
@@ -247,6 +378,10 @@ export class TerrainStream {
   }
   dispose() {
     this.generation++;
+    for (const [key, draw] of this.craterDraws)
+      this.disposeCraterDraw(key, draw);
+    for (const source of this.scars?.children ?? []) source.visible = true;
+    this.scars = undefined;
     for (const t of this.tiles.values()) this.disposeTile(t);
     this.tiles.clear();
     this.group.removeFromParent();

@@ -106,7 +106,7 @@ Material assumptions: stone density 3,000 kg/m³, strength 1 MPa; iron 7,800 kg/
 
 Dry-rock, gravity-regime transient crater diameter follows Collins, Melosh & Marcus (2005), equation 21. Simple/complex transition is scaled with gravity. Planetary target rock densities and atmosphere profiles are representative. Oceans, detailed target geology/strength, global climate, tsunamis, basin collapse, and disruption are outside the model. For gas/ice giants, atmosphere extrapolation is illustrative; no solid crater is reported.
 
-Craters use the estimated physical diameter and depth in a locally refined surface patch. Their bowls and rims remain idealized. Very large deformations are visually capped at 0.35 radian radius and 5% of world radius; basin collapse and global destruction are not simulated. The incoming trajectory, fragmentation shapes, flash, shock ring and vapor/dust plume are cinematic effects. Small incoming rocks and particle markers have minimum display sizes. The entry profile chart uses the numerical descent result.
+Craters use the estimated physical diameter and rim-to-floor depth in a circular, locally refined surface patch. Small craters form bowls; larger craters add collapsed walls, terraces and central uplift, with fresh rock, darker impact melt and a thinning ejecta blanket. These are illustrative final morphologies, not hydrodynamic predictions. Ocean targets still use the stated dry-rock approximation; water refill is not simulated. Very large deformations are visually capped at 0.35 radian radius and 5% of world radius; basin collapse and global destruction are not simulated. The incoming trajectory, fragmentation shapes, flash, shock ring, temporary local cloud clearing and vapor/dust plume are cinematic effects. Small incoming rocks and particle markers have minimum display sizes. The entry profile chart uses the numerical descent result.
 
 ### Ballistic ejecta
 
@@ -125,6 +125,7 @@ Sources:
 - [JPL satellite physical parameters](https://ssd.jpl.nasa.gov/sats/phys_par/)
 - [Imagery and measured-elevation provenance](ASSETS.md)
 - [Collins, Melosh & Marcus (2005), Earth Impact Effects Program](https://doi.org/10.1111/j.1945-5100.2005.tb00157.x)
+- [Lunar and Planetary Institute: simple and complex impact craters](https://www.lpi.usra.edu/lunar/missions/orbiter/lunar_orbiter/impact_crater/)
 - [NASA planetary fact sheets](https://nssdc.gsfc.nasa.gov/planetary/factsheet/)
 
 ## Verification
@@ -147,3 +148,5 @@ NASA, NOAA and Solar System Scope / INOVE provide the imagery and measured terra
 ### Rendering continuity
 
 Streamed imagery blends from its resident parent over 450 ms on a common terrain lattice. Loaded detail stays resident through zoom reversals; only branches entirely behind the limb fold back to free cache space. The base globe remains the sole surface until both root tiles are ready, and a complete parent covers pending or failed children. Terrain has no artificial depth offset into the cloud deck. Atmosphere ray marching uses the final camera pose each frame. Ocean reflection uses a broad GGX rough-water approximation with dielectric Fresnel reflectance; it is not a dated wind or sea-state model.
+
+Crater surfaces reuse the same resident imagery and fades as the surrounding terrain, including 16K Earth detail. Dense excavation starts from the canonical ground plane, so small craters do not float above a coarse globe. Exclusive patch ownership prevents overlapping scars from fighting for depth; age-ordered material blending preserves older exposed terrain. Fresh excavation suppresses the original ocean glint and city lights. Both terrain selection and atmospheric scattering use the final encounter camera, and close-up clipping continues to adapt during aftermath exploration.

@@ -375,7 +375,16 @@ export class ImpactSequence {
     pa.needsUpdate = true;
     const pm = this.plume.material as THREE.PointsMaterial;
     pm.size = scale * (0.22 + after * 0.08);
-    pm.opacity = this.time >= contact ? 0.55 * Math.exp(-after * 0.23) : 0;
+    // Hundreds of large translucent sprites accumulate into an opaque veil,
+    // even when each has only 2% opacity. Dissipate the cinematic plume fully
+    // before final inspection; numerical debris continues on its own timeline.
+    pm.opacity =
+      this.time >= contact
+        ? 0.55 *
+          Math.exp(-after * 0.23) *
+          (1 - THREE.MathUtils.smoothstep(after, 6, 12))
+        : 0;
+    this.plume.visible = pm.opacity > 0;
     pm.color.set(after < 1 ? "#ffc983" : after < 4 ? "#bca18a" : "#8c7c72");
     pm.blending = after < 1 ? THREE.AdditiveBlending : THREE.NormalBlending;
     let index = 0;
