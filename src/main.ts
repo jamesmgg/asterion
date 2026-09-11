@@ -66,7 +66,7 @@ app.innerHTML = `
   </section>
   <div id="system-settings" hidden><label>System scale<select id="distance-scale" aria-label="Distance scale"><option value="readable">Readable spacing</option><option value="true">True sizes & orbits</option></select></label><label class="toggle"><input type="checkbox" id="orbit-toggle" checked/><span>Orbit guides</span></label><label class="toggle"><input type="checkbox" id="belt-toggle" checked/><span>Asteroid belt</span></label><label class="toggle"><input type="checkbox" id="label-toggle" checked/><span>Planet labels</span></label><label>Orbit camera<select id="orbit-camera" aria-label="Orbit camera"><option value="oblique">Oblique view</option><option value="top">Above the orbits</option><option value="edge">Along the orbital plane</option><option value="inner">Inner solar system</option><option value="belt">Asteroid belt</option></select></label><p><span id="scale-note">Planet sizes enlarged for visibility.</span><br/>Belt markers enlarged; representative orbits.<br/>Increase time flow to watch them move.</p></div>
   <div class="view-tools"><button class="icon-button" id="zoom-in" aria-label="Zoom in" title="Zoom in">${icon("plus")}</button><button class="icon-button" id="zoom-out" aria-label="Zoom out" title="Zoom out">${icon("minus")}</button><span></span><button class="icon-button" id="reset-camera" aria-label="Reset camera" title="Reset camera">${icon("reset")}</button><button class="icon-button" id="capture" aria-label="Save image" title="Save image">${icon("camera")}</button><button class="icon-button" id="fullscreen" aria-label="Fullscreen" title="Fullscreen">${icon("expand")}</button></div>
-  <div id="detail-readout" class="detail-readout" role="status">Preparing surface detail</div><div id="eclipse-banner" hidden>Eclipse demonstration · aligned geometry, not a dated event</div><div class="view-caption"><span class="crosshair">＋</span><span id="view-hint">Drag to orbit <i>·</i> Scroll or pinch to explore</span></div>
+  <div id="detail-readout" class="detail-readout" role="status">Preparing surface detail</div><div id="eclipse-banner" hidden>Eclipse demonstration · aligned geometry, not a dated event</div><div class="view-caption"><span class="crosshair">＋</span><span id="view-hint">Drag to orbit <i>·</i> Pinch &amp; twist <i>·</i> Scroll to zoom</span></div>
   <aside class="instrument" id="instrument">
    <div class="instrument-tabs"><button id="tab-explore" class="active" aria-label="Explore" aria-pressed="true">${icon("orbit")}Explore</button><button id="tab-impact" aria-label="Impact lab" aria-pressed="false">${icon("impact")}Impact lab</button><button id="collapse-panel" class="icon-button" aria-label="Collapse panel">${icon("chevron")}</button></div>
    <div class="instrument-body" id="explore-panel">
@@ -108,7 +108,7 @@ app.innerHTML = `
   <section id="impact-playback" hidden aria-label="Impact playback">
    <div class="playback-heading"><span id="impact-phase">Approach</span><span id="impact-clock">0 s</span><button id="exit-playback" class="text-button">Results</button></div>
    <input id="impact-scrub" type="range" min="0" max="100" value="0" step=".1" aria-label="Impact timeline"/>
-   <div class="playback-controls"><button id="impact-pause" class="icon-button" aria-label="Pause impact">${icon("pause")}</button><label>Playback<select id="impact-rate" aria-label="Impact playback speed"><option value=".1">0.1× slow motion</option><option value=".25">0.25×</option><option value="1" selected>1× cinematic</option><option value="3">3×</option></select></label><label>Camera<select id="impact-camera" aria-label="Impact camera"><option value="approach">Rock → impact site</option><option value="site">Impact site</option><option value="planet">Whole world</option><option value="debris">Debris trajectories</option></select></label></div>
+   <div class="playback-controls"><button id="impact-pause" class="icon-button" aria-label="Pause impact">${icon("pause")}</button><label>Playback<select id="impact-rate" aria-label="Impact playback speed"><option value=".1">0.1× slow motion</option><option value=".25">0.25×</option><option value="1" selected>1× cinematic</option><option value="3">3×</option></select></label><label>Camera<select id="impact-camera" aria-label="Impact camera"><option value="approach">Rock → impact site</option><option value="site">Impact site</option><option value="planet">Whole world</option><option value="debris">Debris trajectories</option><option value="free">Free orbit</option></select></label></div>
    <div id="debris-readout">Tracing the encounter</div><p class="trajectory-key"><span>● Returning</span><span>● Escaping</span>Particles represent mass packets; markers enlarged.</p>
   </section><div id="loading" role="status"><div class="loading-orbit"></div><p>Gathering the worlds</p><small>Loading locally hosted planetary maps</small></div>
   <div id="error" hidden role="alert"></div>
@@ -126,7 +126,7 @@ app.innerHTML = `
   <h3>Craters & giant planets</h3><p>Dry-rock gravity-regime crater scaling follows Collins, Melosh & Marcus (2005), with local gravity and a gravity-scaled simple/complex transition. This is an estimate, not a hydrocode. Small strength-dominated craters, very shallow entries, basin-scale events, oceans, tsunamis, local target geology, global climate, and planetary disruption are not resolved. Gas/ice giant impacts show atmospheric plumes without a solid-surface crater; their deep exponential atmospheres are illustrative extrapolations.</p>
   <p>The incoming rock, shock flash, and vapor plume are cinematic. Excavated mass packets follow numerical inverse-square gravity with approximate atmospheric drag. A power-law launch-speed distribution is normalized to at most 15% of surface impact energy. Each packet carries mass; its orbit classification checks both energy and periapsis. Material that is gravitationally bound can still fall back. These equations do not include packet collisions, self-gravity, accretion, or hydrodynamics, so they do not predict the birth of a moon. Terrain craters use the estimated diameter and depth; their shapes remain idealized, and basin-scale deformation is visually capped. Ejecta assumes representative rock density and launch speeds; rotation, other bodies’ gravity and fragment ablation are omitted. Orbital time pauses during encounters; the playback timeline compresses the physical ejecta timescale and can be scrubbed. Optional sound is an interface cue.</p>
   <h3>Sources & credits</h3><ul class="sources"><li><a href="https://ssd.jpl.nasa.gov/planets/approx_pos.html" target="_blank" rel="noreferrer">NASA JPL · Approximate positions of the planets</a></li><li><a href="https://ssd.jpl.nasa.gov/planets/phys_par.html" target="_blank" rel="noreferrer">NASA JPL · Planetary physical parameters</a></li><li><a href="https://ssd.jpl.nasa.gov/horizons/" target="_blank" rel="noreferrer">NASA JPL · Horizons satellite vectors</a></li><li><a href="https://science.nasa.gov/mission/dawn/faq/" target="_blank" rel="noreferrer">NASA Dawn · Main asteroid belt</a></li><li><a href="https://doi.org/10.1111/j.1945-5100.2005.tb00157.x" target="_blank" rel="noreferrer">Collins, Melosh & Marcus · Earth Impact Effects Program (2005)</a></li><li><a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Planet maps by Solar System Scope / INOVE</a>, based on NASA imagery. <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>. Colors and unmapped areas include artistic adjustments. Maps are locally hosted and used with atmospheric and lighting effects.</li></ul>
-  <h3>Surface detail &amp; moons</h3><p>Close-ups stream locally hosted image tiles up to 16,384 pixels wide for Earth and the Moon, 8,192 for Mars, Mercury and the revealed Venus surface, with lower source limits elsewhere. Earth relief uses NOAA ETOPO 2022; lunar relief uses NASA LOLA; Mars relief uses NASA MOLA. Elevations are resampled to 4K and applied in metres relative to each reference sphere, without vertical exaggeration. The Earth sea surface is clamped to sea level. This is global orbital terrain, not metre-resolution landing-site coverage. Clouds, haze, weather drift and prime meridians are illustrative. The eclipse demonstration aligns Io with the Sun deliberately; its shadow uses angular solar/occluder disk overlap, not a recorded event.</p><p><a href="https://svs.gsfc.nasa.gov/4720/" target="_blank" rel="noreferrer">NASA LRO color and elevation</a> · <a href="https://www.ncei.noaa.gov/products/etopo-global-relief-model" target="_blank" rel="noreferrer">NOAA ETOPO</a> · <a href="https://pds-geosciences.wustl.edu/missions/mgs/megdr.html" target="_blank" rel="noreferrer">NASA MOLA</a> · <a href="https://github.com/nasa/NASA-3D-Resources" target="_blank" rel="noreferrer">NASA moon maps</a> · <a href="https://ssd.jpl.nasa.gov/sats/elem/" target="_blank" rel="noreferrer">JPL satellite reference elements</a></p><h3>Controls</h3><p>Drag to orbit. Scroll or pinch to zoom. Use the destination dock to visit a world. In the impact lab, choose a site and tap the globe. Space pauses time; [ and ] change planets; Escape cancels targeting. Your last 20 encounters stay in this browser and can be exported.</p>
+  <h3>Surface detail &amp; moons</h3><p>Close-ups stream locally hosted image tiles up to 16,384 pixels wide for Earth and the Moon, 8,192 for Mars, Mercury and the revealed Venus surface, with lower source limits elsewhere. Earth relief uses NOAA ETOPO 2022; lunar relief uses NASA LOLA; Mars relief uses NASA MOLA. Elevations are resampled to 4K and applied in metres relative to each reference sphere, without vertical exaggeration. The Earth sea surface is clamped to sea level. This is global orbital terrain, not metre-resolution landing-site coverage. Clouds, haze, weather drift and prime meridians are illustrative. The eclipse demonstration aligns Io with the Sun deliberately; its shadow uses angular solar/occluder disk overlap, not a recorded event.</p><p><a href="https://svs.gsfc.nasa.gov/4720/" target="_blank" rel="noreferrer">NASA LRO color and elevation</a> · <a href="https://www.ncei.noaa.gov/products/etopo-global-relief-model" target="_blank" rel="noreferrer">NOAA ETOPO</a> · <a href="https://pds-geosciences.wustl.edu/missions/mgs/megdr.html" target="_blank" rel="noreferrer">NASA MOLA</a> · <a href="https://github.com/nasa/NASA-3D-Resources" target="_blank" rel="noreferrer">NASA moon maps</a> · <a href="https://ssd.jpl.nasa.gov/sats/elem/" target="_blank" rel="noreferrer">JPL satellite reference elements</a></p><h3>Controls</h3><p>Drag freely to orbit, including over the poles. Scroll to zoom, or use two fingers to pinch, twist, and drag at once. Dragging during an impact returns camera control to you while retaining the encounter. Use the destination dock to visit a world. In the impact lab, choose a site and tap the globe. Space pauses time; [ and ] change planets; Escape cancels targeting. Your last 20 encounters stay in this browser and can be exported.</p>
  </div></dialog>`;
 
 let sim = new SolarSystem(julianDate(new Date())),
@@ -234,7 +234,8 @@ function selectCosmicDestination(id: string) {
   $("#instrument").classList.remove("watching");
   scene.openCosmic(destination);
   cosmicUI.showDestination(destination);
-  $("#view-hint").textContent = "Drag to orbit · Scroll or pinch to explore";
+  $("#view-hint").textContent =
+    "Drag to orbit · Pinch & twist · Scroll to zoom";
   updatePause();
 }
 function selectCosmicBody(id?: string) {
@@ -339,7 +340,7 @@ function selectPlanet(id: string) {
   $<HTMLButtonElement>("#replay").disabled = true;
   lastImpact = null;
   $("#view-hint").innerHTML =
-    "Drag to orbit <i>·</i> Scroll or pinch to explore";
+    "Drag to orbit <i>·</i> Pinch &amp; twist <i>·</i> Scroll to zoom";
   updatePreview();
   updatePause();
 }
@@ -654,6 +655,8 @@ $<HTMLSelectElement>("#orbit-camera").onchange = (e) =>
 $<HTMLInputElement>("#terrain-toggle").onchange = (e) =>
   scene.setTerrain((e.target as HTMLInputElement).checked);
 scene.onDetail = (text) => ($("#detail-readout").textContent = text);
+scene.onNavigation = () =>
+  ($<HTMLSelectElement>("#impact-camera").value = "free");
 scene.onPlayback = (value) => {
   $<HTMLInputElement>("#impact-scrub").value = String(value.fraction * 100);
   $("#impact-phase").textContent = value.phase;
@@ -692,7 +695,8 @@ $<HTMLSelectElement>("#impact-camera").onchange = (e) =>
       | "approach"
       | "site"
       | "planet"
-      | "debris",
+      | "debris"
+      | "free",
   );
 $("#exit-playback").onclick = () => {
   $("#impact-playback").hidden = true;
@@ -895,7 +899,8 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape") {
     scene.aiming = false;
-    $("#view-hint").textContent = "Drag to orbit · Scroll or pinch to explore";
+    $("#view-hint").textContent =
+      "Drag to orbit · Pinch & twist · Scroll to zoom";
   }
 });
 scene.update(sim, 0, performance.now());

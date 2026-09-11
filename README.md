@@ -54,7 +54,8 @@ To remove only this route: `tailscale serve --tcp 8787 off`. Do not reset all Se
 ## Explore
 
 - Visit the Sun, all eight planets, and eight major moons. On a phone, swipe the destination dock to reach the outer worlds; Explore lists each planet’s moons.
-- Drag to orbit; scroll or pinch to zoom. The + / − buttons and camera reset provide alternatives.
+- Drag in any direction to orbit freely, including over the poles. Two fingers can drag, pinch to zoom, and twist to rotate the view at the same time. Mouse dragging and scrolling remain available; the + / − buttons and camera reset provide alternatives. Close-up gestures slow down near the surface.
+- Dragging during or after an impact releases the cinematic camera and resumes orbiting the whole planet. The encounter, timeline, and crater remain available; choose an Impact camera preset to return to the action.
 - Solar system view offers readable spacing or true sizes & orbits, plus oblique, top-down, edge-on, inner-system, and asteroid-belt cameras. True scale uses one AU-based conversion for both orbital distances and every body radius, including the Sun. Planet disks can be subpixel: use labels or destinations for close-ups. Readable mode enlarges body sizes. Moon-system views preserve actual relative radii and distances.
 - The main asteroid belt is visible between Mars and Jupiter. Toggle **Asteroid belt** in Solar system settings, or choose **Asteroid belt** in the camera menu for a closer view. Pause and time-flow controls also govern the belt.
 - Set the simulation date and time speed, pause, or return to now. Space toggles pause; brackets change worlds.

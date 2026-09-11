@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GlobeControls } from "./globe-controls.ts";
 import { PLANETS, ELEMENTS } from "./data.ts";
 import {
   BODIES,
@@ -66,7 +66,7 @@ export class Observatory {
   renderer: THREE.WebGLRenderer;
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(38, 1, 0.005, 5000);
-  controls: OrbitControls;
+  controls: GlobeControls;
   worlds = new Map<string, World>();
   view: "planet" | "system" | "moons" | "cosmic" = "planet";
   cosmic?: CosmicScene;
@@ -100,6 +100,9 @@ export class Observatory {
   private readyCallback?: () => void;
   private desiredCamera: THREE.Vector3 | null = null;
   private followAsteroid = false;
+  private surfaceExploration = false;
+  private surfaceClearance = 0.00008;
+  private heightSampler?: CanvasRenderingContext2D;
   private selectedJD = 2451545;
   private mobile = false;
   private venusSurface = false;
@@ -119,6 +122,7 @@ export class Observatory {
   private guideTick = 0;
   onDetail: (text: string) => void = () => {};
   onPlayback: (value: Playback) => void = () => {};
+  onNavigation: () => void = () => {};
   onSelect: (id: string) => void = () => {};
   onTarget: (lat: number, lon: number) => void = () => {};
   onFrame: (fps: number) => void = () => {};
@@ -157,7 +161,7 @@ export class Observatory {
     container.append(this.renderer.domElement);
     this.renderer.domElement.setAttribute(
       "aria-label",
-      "Interactive 3D solar system. Drag to orbit, pinch or scroll to zoom.",
+      "Interactive 3D solar system. Drag to orbit, pinch or scroll to zoom, and twist two fingers to rotate the view.",
     );
     this.renderer.domElement.addEventListener("webglcontextlost", (e) => {
       e.preventDefault();
@@ -172,7 +176,7 @@ export class Observatory {
     this.manager.onError = (url) =>
       onError(`A planet texture could not load: ${url}. Reload to try again.`);
     this.loader = new THREE.TextureLoader(this.manager);
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls = new GlobeControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.07;
     this.controls.enablePan = false;
@@ -180,8 +184,8 @@ export class Observatory {
     this.controls.maxDistance = 12;
     this.controls.rotateSpeed = 0.55;
     this.controls.zoomSpeed = 0.75;
-    this.controls.addEventListener("start", () => {
-      this.desiredCamera = null;
+    this.controls.addEventListener("start", (event) => {
+      this.beginNavigation(event.interaction);
     });
     this.scene.add(this.root);
     this.root.add(this.worldGroup, this.orbitGroup, this.belt);
@@ -205,13 +209,36 @@ export class Observatory {
       })
       .catch(() => this.onDetail("Base imagery · detail unavailable"));
     new ResizeObserver(() => this.resize()).observe(container);
-    let down = { x: 0, y: 0 };
+    const pointers = new Map<number, { x: number; y: number }>();
+    let gesture = false;
     container.addEventListener("pointerdown", (e) => {
-      down = { x: e.clientX, y: e.clientY };
+      if (e.target !== this.renderer.domElement || e.button !== 0) return;
+      if (!pointers.size) gesture = false;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size > 1) gesture = true;
+    });
+    container.addEventListener("pointermove", (e) => {
+      const down = pointers.get(e.pointerId);
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) >= 7)
+        gesture = true;
     });
     container.addEventListener("pointerup", (e) => {
-      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) < 7)
+      const down = pointers.get(e.pointerId);
+      pointers.delete(e.pointerId);
+      if (
+        down &&
+        !gesture &&
+        !this.controls.isDragging &&
+        Math.hypot(e.clientX - down.x, e.clientY - down.y) < 7
+      )
         this.pick(e.clientX, e.clientY);
+    });
+    container.addEventListener("pointercancel", (e) => {
+      gesture = true;
+      pointers.delete(e.pointerId);
+    });
+    container.addEventListener("lostpointercapture", (e) => {
+      pointers.delete(e.pointerId);
     });
   }
   texture(name: string) {
@@ -573,7 +600,7 @@ export class Observatory {
     this.solarPixelRatio = undefined;
     this.renderer.domElement.setAttribute(
       "aria-label",
-      "Interactive 3D solar system. Drag to orbit, pinch or scroll to zoom.",
+      "Interactive 3D solar system. Drag to orbit, pinch or scroll to zoom, and twist two fingers to rotate the view.",
     );
   }
   advanceCosmic(dt: number, speed: number) {
@@ -583,6 +610,7 @@ export class Observatory {
   focusCosmicBody(id?: string) {
     const cosmic = this.cosmic;
     if (!cosmic) return;
+    this.resetCameraMotion();
     this.cosmicFocus = cosmic.destination.bodies.some((body) => body.id === id)
       ? id
       : undefined;
@@ -678,6 +706,7 @@ export class Observatory {
   focus(id: string, instant = false) {
     this.closeCosmic();
     this.clearEvent();
+    this.resetCameraMotion(1);
     this.eclipseDemo = false;
     this.moonGuides.visible = false;
     this.disposeDetail();
@@ -733,6 +762,7 @@ export class Observatory {
   system() {
     this.closeCosmic();
     this.clearEvent();
+    this.resetCameraMotion();
     this.eclipseDemo = false;
     this.moonGuides.visible = false;
     this.disposeDetail();
@@ -760,8 +790,60 @@ export class Observatory {
     this.belt.update(this.selectedJD, real);
     if (this.view === "system") this.setSystemCamera(this.systemCamera);
   }
-  zoom(multiplier: number) {
+  private resetCameraMotion(surfaceRadius = 0) {
+    this.controls.cancelMotion();
+    this.surfaceExploration = false;
+    this.controls.surfaceRadius = surfaceRadius;
+    this.camera.up.set(0, 1, 0);
+  }
+  private beginNavigation(interaction: "orbit" | "zoom") {
+    const wasFollowing = this.followAsteroid;
     this.desiredCamera = null;
+    this.followAsteroid = false;
+    this.controls.cancelMotion();
+    if (this.view !== "planet" || (interaction === "zoom" && !wasFollowing))
+      return;
+    // Encounter cameras frame a point on the surface (or the incoming rock).
+    // The first drag hands control back to a globe-centered orbit, retaining
+    // the encounter and easing the viewing direction instead of teleporting.
+    if (wasFollowing || this.controls.target.lengthSq() > 1e-20) {
+      this.surfaceExploration = true;
+      this.surfaceClearance = 0.00008;
+      const ground = this.navigationFloor() - this.surfaceClearance;
+      this.surfaceClearance = Math.max(
+        0.000001,
+        Math.min(this.surfaceClearance, this.camera.position.length() - ground),
+      );
+    }
+    if (this.controls.target.lengthSq() > 1e-20)
+      this.controls.transitionTarget(new THREE.Vector3());
+    this.controls.minDistance = this.navigationFloor();
+    this.controls.maxDistance = 180;
+    this.controls.surfaceRadius = Math.min(
+      1,
+      this.controls.minDistance - 0.00008,
+    );
+    if (this.entry) this.onNavigation();
+  }
+  private navigationFloor() {
+    const world = this.worlds.get(this.selected);
+    if (this.surfaceExploration && world) {
+      world.mesh.updateWorldMatrix(true, false);
+      const local = world.mesh
+        .worldToLocal(this.camera.position.clone())
+        .normalize();
+      // Follow the measured ground beneath a free surface orbit. A global
+      // mountain-height floor would abruptly pull a small crater kilometers away.
+      return 1 + this.surfaceHeight(world, local) + this.surfaceClearance;
+    }
+    const body = BODIES.find((p) => p.id === this.selected)!;
+    const relief = this.terrainEnabled
+      ? (this.datasets[this.selected + "-height"]?.max ?? 0) / body.radius
+      : 0;
+    return 1 + (relief > 0 ? relief + 0.001 : 0.003);
+  }
+  zoom(multiplier: number) {
+    this.beginNavigation("zoom");
     this.camera.position
       .sub(this.controls.target)
       .multiplyScalar(multiplier)
@@ -869,8 +951,13 @@ export class Observatory {
     this.targetMarker.removeFromParent();
     this.impactCamera("approach");
   }
-  impactCamera(mode: "approach" | "site" | "planet" | "debris") {
+  impactCamera(mode: "approach" | "site" | "planet" | "debris" | "free") {
     if (!this.entry || !this.targetLocal) return;
+    if (mode === "free") {
+      this.beginNavigation("orbit");
+      return;
+    }
+    this.resetCameraMotion(mode === "planet" || mode === "debris" ? 1 : 0);
     this.followAsteroid = mode === "approach" && this.entry.time < 3.5;
     this.camera.near = this.followAsteroid
       ? Math.max(1e-8, this.entry.incomingRadius * 0.03)
@@ -921,17 +1008,23 @@ export class Observatory {
   }
   private impactSurfaceHeight(w: World) {
     if (!this.targetLocal || !this.terrainEnabled) return 0;
+    return this.surfaceHeight(w, this.targetLocal);
+  }
+  private surfaceHeight(w: World, local: THREE.Vector3) {
+    if (!this.terrainEnabled) return 0;
     const u = w.material.uniforms,
       image = u.heightMap.value.image;
     if (!image?.width || !u.reliefEnabled.value) return 0;
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 1;
-    const context = canvas.getContext("2d")!;
-    const longitude =
-      (Math.atan2(this.targetLocal.z, -this.targetLocal.x) / (2 * Math.PI) +
-        1) %
-      1;
-    const latitude = Math.acos(this.targetLocal.y) / Math.PI;
+    if (!this.heightSampler) {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      this.heightSampler = canvas.getContext("2d", {
+        willReadFrequently: true,
+      })!;
+    }
+    const context = this.heightSampler;
+    const longitude = (Math.atan2(local.z, -local.x) / (2 * Math.PI) + 1) % 1;
+    const latitude = Math.acos(THREE.MathUtils.clamp(local.y, -1, 1)) / Math.PI;
     context.drawImage(
       image,
       longitude * (image.width - 1),
@@ -1011,6 +1104,7 @@ export class Observatory {
     }
   }
   clearEvent() {
+    if (this.entry) this.beginNavigation("orbit");
     this.followAsteroid = false;
     for (const w of this.worlds.values())
       w.material.uniforms.cloudClear.value.set(0, 0, 0, 0);
@@ -1137,6 +1231,7 @@ export class Observatory {
   }
   satellites(parent: string) {
     this.focus(parent);
+    this.resetCameraMotion();
     this.view = "moons";
     this.moonParent = parent;
     this.disposeDetail();
@@ -1165,6 +1260,7 @@ export class Observatory {
       .add(new THREE.Vector3(0, 0.3, 0));
   }
   setSystemCamera(mode: "oblique" | "top" | "edge" | "inner" | "belt") {
+    this.resetCameraMotion();
     this.systemCamera = mode;
     this.controls.target.set(0, 0, 0);
     if (mode === "belt") {
@@ -1329,6 +1425,13 @@ export class Observatory {
       this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-dt * 4));
       if (this.camera.position.distanceTo(this.desiredCamera) < 0.0001)
         this.desiredCamera = null;
+    }
+    if (this.view === "planet" && this.surfaceExploration) {
+      this.controls.minDistance = this.navigationFloor();
+      this.controls.surfaceRadius = Math.min(
+        1,
+        this.controls.minDistance - 0.00008,
+      );
     }
     this.controls.update();
     const credits = document.getElementById("ephemeris-credit");

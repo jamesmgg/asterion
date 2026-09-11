@@ -76,12 +76,27 @@ varying vec2 vUv;varying vec3 vNormal;varying vec3 vWorld;varying vec3 vObject;
 ${reliefGLSL}
 ${eclipseGLSL}
 ${craterMaterialGLSL}
+// A tile's longitude interval can border 0/1. Choose its equivalent continuous
+// coordinate before applying the gutter transform; wrapping UVs in the shader
+// would otherwise turn a one-pixel footprint into a whole-globe mip lookup.
+vec2 tileUv(vec2 uv,vec4 rect){uv.x+=floor(rect.x+rect.z*.5-uv.x+.5);return ((uv-rect.xy)/rect.zw*512.+1.)/514.;}
 void main(){
  vec3 objectN=normalize(vObject);
- vec2 uv=craterPatch>.5?vec2(fract(atan(objectN.z,-objectN.x)/6.28318530718+1.),acos(clamp(-objectN.y,-1.,1.))/3.14159265359):vec2(fract(vUv.x),vUv.y);
+ // Geometry carries continuous longitude across each triangle. Let the global
+ // texture's RepeatWrapping handle its seam, preserving texture derivatives.
+ vec2 uv=vUv;
+ if(craterPatch>.5){uv=vec2(atan(objectN.z,-objectN.x)/6.28318530718,acos(clamp(-objectN.y,-1.,1.))/3.14159265359);uv.x+=floor(vUv.x-uv.x+.5);}
+ vec2 globeUv=uv;
+ // Very small differential zonal drift; it illustrates weather, not a forecast.
+ if(giant>.5)globeUv.x+=sin(uv.y*75.)*sin(time*.012)*.0008;
+ // Capture the complete fragment quad before patch clipping discards a neighbor.
+ // Implicit texture derivatives after that divergent discard are undefined.
+ vec2 uvDx=dFdx(uv),uvDy=dFdy(uv),globeDx=dFdx(globeUv),globeDy=dFdy(globeUv);
+ vec3 geometricN=cross(dFdx(vWorld),dFdy(vWorld));
  int owner=craterOwner(objectN);
  if(craterPatch>.5){if(owner!=int(craterPatchIndex))discard;
-  if(patchTiled>.5&&(uv.x<patchRect.x||uv.y<patchRect.y||uv.x>=patchRect.x+patchRect.z||uv.y>=patchRect.y+patchRect.w))discard;
+  vec2 clippedUv=vec2(fract(uv.x),uv.y);
+  if(patchTiled>.5&&(clippedUv.x<patchRect.x||clippedUv.y<patchRect.y||clippedUv.x>=patchRect.x+patchRect.z||clippedUv.y>=patchRect.y+patchRect.w))discard;
  }else if(owner>=0){for(int i=0;i<8;i++){if(i>=craterCount)break;if(craterCoordinates(objectN,i).x<1.98)discard;}}
  // A narrow, unchanged outer guard shares the ground's imagery and shading.
  // It covers triangle-edge rounding without moving terrain into the clouds.
@@ -95,19 +110,16 @@ void main(){
  }
  // Geometric derivatives shade the excavated bowl and raised rim.
  if(owner>=0){float altered=0.;for(int i=0;i<8;i++){if(i>=craterCount)break;altered=max(altered,1.-smoothstep(1.25,1.8,craterCoordinates(objectN,i).x));}
- vec3 gn=normalize(cross(dFdx(vWorld),dFdy(vWorld)));if(dot(gn,n)<0.)gn=-gn;n=normalize(mix(n,gn,altered));}
- vec2 sampleUv=uv;
- // Very small differential zonal drift; it illustrates weather, not a forecast.
- if(giant>.5)sampleUv.x+=sin(uv.y*75.)*sin(time*.012)*.0008;
- vec2 globeUv=sampleUv;
- if(tiled>.5)sampleUv=((sampleUv-tileRect.xy)/tileRect.zw*512.+1.)/514.;
- vec3 albedo=pow(texture2D(dayMap,sampleUv).rgb,vec3(2.2));
+ vec3 gn=normalize(geometricN);if(dot(gn,n)<0.)gn=-gn;n=normalize(mix(n,gn,altered));}
+ vec2 sampleUv=globeUv,sampleScale=vec2(1.);
+ if(tiled>.5){sampleUv=tileUv(sampleUv,tileRect);sampleScale=(512./514.)/tileRect.zw;}
+ vec3 albedo=pow(textureGrad(dayMap,sampleUv,globeDx*sampleScale,globeDy*sampleScale).rgb,vec3(2.2));
  if(tiled>.5&&detailBlend<1.){
-  vec2 parentUv=globeUv;if(parentTiled>.5)parentUv=((globeUv-parentRect.xy)/parentRect.zw*512.+1.)/514.;
-  albedo=mix(pow(texture2D(parentMap,parentUv).rgb,vec3(2.2)),albedo,detailBlend);
+  vec2 parentUv=globeUv,parentScale=vec2(1.);if(parentTiled>.5){parentUv=tileUv(globeUv,parentRect);parentScale=(512./514.)/parentRect.zw;}
+  albedo=mix(pow(textureGrad(parentMap,parentUv,globeDx*parentScale,globeDy*parentScale).rgb,vec3(2.2)),albedo,detailBlend);
  }
  albedo*=albedoScale;
- if(earth>.5){float water=texture2D(specularMap,uv).r;albedo=mix(albedo,max(albedo,vec3(.004,.015,.037)),water);}
+ if(earth>.5){float water=textureGrad(specularMap,uv,uvDx,uvDy).r;albedo=mix(albedo,max(albedo,vec3(.004,.015,.037)),water);}
  float disturbance=0.;
  if(owner>=0){for(int step=0;step<8;step++){if(step>=craterCount)break;int i=int(mod(float(craterStart+step),8.));
   vec2 c=craterCoordinates(objectN,i);if(c.x>=2.1)continue;disturbance=1.-(1.-disturbance)*(1.-craterDisturbance(c.x,c.y));albedo=craterAlbedo(c.x,c.y,craterComplexities[i],albedo);}}
@@ -117,11 +129,11 @@ void main(){
   vec3 east=normalize(vec3(vObject.z,0.,-vObject.x));vec3 north=normalize(cross(vObject,east));
   vec2 offset=vec2(dot(localSun,east)/max(.05,sin(uv.y*3.14159265)),dot(localSun,north))*.0004/max(.07,ndl);
   float clear=cloudClear.w>0.?1.-smoothstep(.65,1.,length(objectN-cloudClear.xyz)/cloudClear.w):0.;
-  cloudShadow=1.-texture2D(cloudMap,uv+offset+vec2(cloudOffset,0.)).r*.7*(1.-clear);}
+  cloudShadow=1.-textureGrad(cloudMap,uv+offset+vec2(cloudOffset,0.),uvDx,uvDy).r*.7*(1.-clear);}
  vec3 color=albedo*(.016+max(ndl,0.)*1.75*vis*cloudShadow);
  if(earth>.5){
-  vec3 night=pow(texture2D(nightMap,uv).rgb,vec3(2.2));color+=night*(1.-smoothstep(-.2,.05,ndl))*1.3*(1.-disturbance);
-  float ocean=texture2D(specularMap,uv).r*(1.-disturbance);vec3 halfD=normalize(s+viewDir);
+  vec3 night=pow(textureGrad(nightMap,uv,uvDx,uvDy).rgb,vec3(2.2));color+=night*(1.-smoothstep(-.2,.05,ndl))*1.3*(1.-disturbance);
+  float ocean=textureGrad(specularMap,uv,uvDx,uvDy).r*(1.-disturbance);vec3 halfD=normalize(s+viewDir);
   // Rough dielectric water (GGX + Smith masking + Schlick Fresnel). The broad
   // distribution and ~2% normal reflectance avoid a painted-on white lamp spot.
   float nl=max(ndl,0.),nv=max(dot(n,viewDir),.001),nh=max(dot(n,halfD),0.);
