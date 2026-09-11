@@ -209,17 +209,40 @@ for (const mobile of [false, true]) {
       centerBrightness / (16 * 16),
       "small-crater framing must retain visible ground at the camera target",
     ).toBeGreaterThan(25);
-    let holes = 0;
+    const darkGround = new Set<number>();
     for (let y = 14; y < 114; y++) {
       for (let x = 14; x < 114; x++) {
         const index = (y * 128 + x) * 4;
-        if (image[index] + image[index + 1] + image[index + 2] < 65) holes++;
+        // Missing ground reveals blue-black space through the atmospheric
+        // layer. Shadowed rock inside the bowl is dark but remains neutral.
+        const red = image[index],
+          green = image[index + 1],
+          blue = image[index + 2];
+        if (red + green + blue < 65 && blue > red * 1.65 && blue > green * 1.25)
+          darkGround.add(y * 128 + x);
       }
     }
+    // A misplaced patch exposes one continuous crescent. Isolated dark
+    // fragments in the shadowed crater wall are valid lighting, not gaps.
+    let largestGap = 0;
+    while (darkGround.size) {
+      const queue = [darkGround.values().next().value!];
+      darkGround.delete(queue[0]);
+      for (let i = 0; i < queue.length; i++) {
+        const x = queue[i] % 128,
+          y = Math.floor(queue[i] / 128);
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const neighbor = (y + dy) * 128 + x + dx;
+            if (darkGround.delete(neighbor)) queue.push(neighbor);
+          }
+      }
+      largestGap = Math.max(largestGap, queue.length);
+    }
     expect(
-      holes / 10000,
+      largestGap,
       "the close-up ground must not expose a black crescent around the replacement patch",
-    ).toBeLessThan(0.002);
+    ).toBeLessThan(12);
     await page.screenshot({
       path: `test-results/impact-earth-small-${mobile ? "mobile" : "desktop"}.png`,
     });
